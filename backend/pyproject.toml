@@ -1,0 +1,19 @@
+[tool.poetry]
+name = "weride-backend"
+version = "0.1.0"
+description = "Backend for WeRide social navigation app"
+authors = ["Noam Yehoshua"]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+fastapi = "^0.109.0"
+uvicorn = "^0.27.0"
+sqlmodel = "^0.0.14"
+asyncpg = "^0.29.0"
+geoalchemy2 = "^0.14.3"
+redis = "^5.0.1"
+shapely = "^2.0.2"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

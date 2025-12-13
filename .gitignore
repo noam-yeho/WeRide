@@ -1,0 +1,25 @@
+# Python stuff
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.env
+
+# Docker & Database Data (Never upload the actual DB files!)
+postgres_data/
+redis_data/
+
+# IDE settings
+.vscode/
+.idea/
+
+# Mac/Windows junk
+.DS_Store
+Thumbs.db
+
+# Node modules (for the mobile app later)
+node_modules/
+npm-debug.log
