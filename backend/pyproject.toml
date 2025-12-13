@@ -17,3 +17,8 @@ shapely = "^2.0.2"
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+[dependency-groups]
+dev = [
+    "ruff (>=0.14.9,<0.15.0)",
+    "pytest (>=9.0.2,<10.0.0)"
+]
