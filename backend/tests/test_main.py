@@ -4,7 +4,7 @@ from app.main import app
 client = TestClient(app)
 
 def test_read_root():
-    response = client.get("/")
+    response = client.get("/", params={"name": "Noam"})
     
     assert response.status_code == 200
     
