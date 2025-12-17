@@ -49,7 +49,7 @@ class ConvoyCreate(SQLModel):
     destination_name: str
     destination_lat: float
     destination_lon: float
-    start_time: datetime: Optional[datetime] = None
+    start_time: Optional[datetime] = None
 
 class ConvoyRead(ConvoyCreate):
     id: uuid.UUID
