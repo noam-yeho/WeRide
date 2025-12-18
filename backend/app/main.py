@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from app.api import users
+from app.api import users, convoys
 from app.core.database import init_db
 
 app = FastAPI(title="WeRide API", version="0.1.0")
@@ -9,6 +9,7 @@ async def on_startup():
     await init_db()
 
 app.include_router(users.router, prefix="/api/v1/users", tags=["users"])
+app.include_router(convoys.router, prefix="/api/v1/convoys", tags=["convoys"])
 
 @app.get("/")
 async def root(name: str = "Noam"):
