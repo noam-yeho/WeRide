@@ -1,7 +1,6 @@
 import asyncio
 import websockets
 import json
-import uuid
 
 # Configuration
 SERVER_URL = "ws://127.0.0.1:8000/ws"
