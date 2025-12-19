@@ -5,7 +5,7 @@ router = APIRouter()
 
 @router.websocket("/{convoy_id}/{user_id}")
 async def websocket_endpoint(websocket: WebSocket, convoy_id: str, user_id: str):
-    await manager.connect(convoy_id, websocket)
+    await manager.connect(convoy_id, websocket) 
     try:
         while True:
             data = await websocket.receive_json()
