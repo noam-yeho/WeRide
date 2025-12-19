@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional, List
 import uuid
@@ -17,11 +17,11 @@ class ConvoyMember(SQLModel, table=True):
     convoy_id: uuid.UUID = Field(foreign_key="convoy.id", primary_key=True)
     user_id: int = Field(foreign_key="user.id", primary_key=True)
     role: ConvoyRole
-    joined_at: datetime = Field(default_factory=datetime.utcnow)
+    joined_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc)) # FIX
 
 class User(UserBase, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc)) # FIX
     
     convoys: List["Convoy"] = Relationship(back_populates="members", link_model=ConvoyMember)
 

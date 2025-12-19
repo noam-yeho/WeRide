@@ -11,6 +11,7 @@ venv/
 # Docker & Database Data (Never upload the actual DB files!)
 postgres_data/
 redis_data/
+.db
 
 # IDE settings
 .vscode/
