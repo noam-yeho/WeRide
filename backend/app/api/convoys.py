@@ -37,14 +37,19 @@ async def create_convoy(
         invite_code = generate_invite_code()
         existing_code = await session.execute(select(Convoy).where(Convoy.invite_code == invite_code))
 
+    # FIX 1: Strip timezone info to match DB naive timestamp column
+    if convoy_data.start_time and convoy_data.start_time.tzinfo:
+        convoy_data.start_time = convoy_data.start_time.replace(tzinfo=None)
+
     convoy = Convoy(
         invite_code=invite_code,
         **convoy_data.dict()
     )
     session.add(convoy)
     
+    # FIX 2: Use explicit convoy_id instead of the object to ensure FK is set correctly
     member = ConvoyMember(
-        convoy=convoy, 
+        convoy_id=convoy.id, 
         user_id=user_id,
         role=ConvoyRole.LEADER
     )
