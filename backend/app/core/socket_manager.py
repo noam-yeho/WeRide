@@ -101,3 +101,5 @@ class ConnectionManager:
                     await connection.send_json(message)
                 except Exception:
                     pass
+
+manager = ConnectionManager()
