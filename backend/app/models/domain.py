@@ -4,6 +4,10 @@ from typing import Optional, List
 import uuid
 from sqlmodel import Field, SQLModel, Relationship
 
+def utc_now():
+    """Returns a naive UTC datetime (compatible with postgres timestamp without timezone)"""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
 class UserBase(SQLModel):
     username: str = Field(index=True, unique=True)
     phone_number: str = Field(index=True, unique=True)
@@ -17,11 +21,11 @@ class ConvoyMember(SQLModel, table=True):
     convoy_id: uuid.UUID = Field(foreign_key="convoy.id", primary_key=True)
     user_id: int = Field(foreign_key="user.id", primary_key=True)
     role: ConvoyRole
-    joined_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc)) # FIX
+    joined_at: datetime = Field(default_factory=utc_now) # Updated
 
 class User(UserBase, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc)) # FIX
+    created_at: datetime = Field(default_factory=utc_now) # Updated
     
     convoys: List["Convoy"] = Relationship(back_populates="members", link_model=ConvoyMember)
 

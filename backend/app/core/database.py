@@ -2,6 +2,9 @@ from typing import AsyncGenerator
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
 if not DATABASE_URL:
