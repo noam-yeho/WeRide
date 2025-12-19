@@ -25,6 +25,7 @@ class ConvoyMember(SQLModel, table=True):
 
 class User(UserBase, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
+    hashed_password: str
     created_at: datetime = Field(default_factory=utc_now) # Updated
     
     convoys: List["Convoy"] = Relationship(back_populates="members", link_model=ConvoyMember)
@@ -42,7 +43,7 @@ class Convoy(SQLModel, table=True):
     members: List[User] = Relationship(back_populates="convoys", link_model=ConvoyMember)
 
 class UserCreate(UserBase):
-    pass
+    password: str
 
 class UserRead(UserBase):
     id: int

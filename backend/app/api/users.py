@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_session
 from app.models.domain import User, UserCreate, UserRead
 from sqlalchemy.future import select
+from app.core.security import get_password_hash
 
 router = APIRouter()
 
@@ -20,7 +21,11 @@ async def signup(user: UserCreate, session: AsyncSession = Depends(get_session))
     if existing_phone:
         raise HTTPException(status_code=400, detail="Phone number already registered")
 
-    db_user = User.from_orm(user)
+    # Prepare user data
+    user_data = user.dict()
+    password = user_data.pop("password")
+    user_data["hashed_password"] = get_password_hash(password)
+    db_user = User(**user_data)
     session.add(db_user)
     await session.commit()
     await session.refresh(db_user)
