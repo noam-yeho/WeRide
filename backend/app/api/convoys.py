@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 from typing import List
+from app.api.deps import get_current_user
 from app.core.database import get_session
 from app.models.domain import Convoy, ConvoyCreate, ConvoyRead, ConvoyMember, ConvoyRole, User
 from sqlmodel import SQLModel
@@ -14,7 +15,6 @@ router = APIRouter()
 
 class JoinConvoyRequest(SQLModel):
     invite_code: str
-    user_id: int
 
 def generate_invite_code(length: int = 6) -> str:
     chars = string.ascii_uppercase + string.digits
@@ -23,13 +23,9 @@ def generate_invite_code(length: int = 6) -> str:
 @router.post("/", response_model=ConvoyRead)
 async def create_convoy(
     convoy_data: ConvoyCreate,
-    user_id: int = Query(..., description="The ID of the user creating the convoy"),
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session)
 ):
-    user_result = await session.execute(select(User).where(User.id == user_id))
-    user = user_result.scalars().first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
 
     invite_code = generate_invite_code()
     existing_code = await session.execute(select(Convoy).where(Convoy.invite_code == invite_code))
@@ -50,7 +46,7 @@ async def create_convoy(
     # FIX 2: Use explicit convoy_id instead of the object to ensure FK is set correctly
     member = ConvoyMember(
         convoy_id=convoy.id, 
-        user_id=user_id,
+        user_id=current_user.id,
         role=ConvoyRole.LEADER
     )
     session.add(member)
@@ -69,12 +65,9 @@ async def create_convoy(
 @router.post("/join", response_model=ConvoyRead)
 async def join_convoy(
     join_req: JoinConvoyRequest,
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session)
 ):
-    user_result = await session.execute(select(User).where(User.id == join_req.user_id))
-    user = user_result.scalars().first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
 
     result = await session.execute(
         select(Convoy).where(Convoy.invite_code == join_req.invite_code).options(selectinload(Convoy.members))
@@ -83,12 +76,12 @@ async def join_convoy(
     if not convoy:
         raise HTTPException(status_code=404, detail="Convoy not found")
 
-    if any(u.id == join_req.user_id for u in convoy.members):
+    if any(u.id == current_user.id for u in convoy.members):
         return convoy
 
     member = ConvoyMember(
         convoy_id=convoy.id,
-        user_id=join_req.user_id,
+        user_id=current_user.id,
         role=ConvoyRole.MEMBER
     )
     session.add(member)
@@ -102,6 +95,19 @@ async def join_convoy(
     final_convoy = result.scalars().first()
     return final_convoy
 
+@router.get("/mine", response_model=List[ConvoyRead])
+async def get_my_convoys(
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session)
+):
+
+    result = await session.execute(
+        select(User).where(User.id == current_user.id).options(selectinload(User.convoys).options(selectinload(Convoy.members)))
+    )
+    user_with_convoys = result.scalars().first()
+    
+    return user_with_convoys.convoys
+
 @router.get("/{convoy_id}", response_model=ConvoyRead)
 async def get_convoy(
     convoy_id: uuid.UUID,
@@ -114,20 +120,3 @@ async def get_convoy(
     if not convoy:
         raise HTTPException(status_code=404, detail="Convoy not found")
     return convoy
-
-@router.get("/user/{user_id}", response_model=List[ConvoyRead])
-async def get_user_convoys(
-    user_id: int,
-    session: AsyncSession = Depends(get_session)
-):
-    user_result = await session.execute(select(User).where(User.id == user_id))
-    user = user_result.scalars().first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    result = await session.execute(
-        select(User).where(User.id == user_id).options(selectinload(User.convoys).options(selectinload(Convoy.members)))
-    )
-    user_with_convoys = result.scalars().first()
-    
-    return user_with_convoys.convoys

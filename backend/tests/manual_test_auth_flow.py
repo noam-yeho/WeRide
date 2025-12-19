@@ -37,7 +37,7 @@ async def test_auth():
             
         token_data = response.json()
         access_token = token_data["access_token"]
-        print(f"✅ Login Success!")
+        print("✅ Login Success!")
         print(f"🎫 Token received (first 20 chars): {access_token[:20]}...")
         print("🎉 Authentication System is FULLY OPERATIONAL!")
 

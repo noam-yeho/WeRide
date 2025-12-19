@@ -4,12 +4,12 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from sqlalchemy import pool
-from sqlalchemy.engine import Connection
-from sqlalchemy.ext.asyncio import async_engine_from_config
+from sqlalchemy import pool # noqa: E402
+from sqlalchemy.engine import Connection # noqa: E402
+from sqlalchemy.ext.asyncio import async_engine_from_config # noqa: E402
 
-from alembic import context
-from sqlmodel import SQLModel
+from alembic import context # noqa: E402
+from sqlmodel import SQLModel # noqa: E402
 
 # 1. Import your models
 from app.models import domain  # noqa
