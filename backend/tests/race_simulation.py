@@ -5,7 +5,7 @@ import httpx
 
 BASE_URL = "http://127.0.0.1:8000/api/v1"
 WS_URL = "ws://127.0.0.1:8000/ws"
-CONVOY_ID = "0018b0df-9ff2-49ce-bf8b-dc6d990da7b4"
+CONVOY_ID = "43bc56e9-d7aa-4e69-8b55-2ef259c903b1"
 DEST_LAT, DEST_LON = 32.0853, 34.7818
 
 async def get_auth_token(username, password):
@@ -69,9 +69,11 @@ async def run_driver(name, password, start_lat, start_lon, speed_lat):
         print(f"❌ Connection rejected for {name}: {e.status_code} (Probably Auth Failed)")
 
 async def main():
-    driver1 = run_driver("NoamDriver", "Pass123!", 32.1600, 34.8000, 0.002)
+    raanana_lat = 32.1848
+    raanana_lon = 34.8713
+    driver1 = run_driver("NoamDriver", "Pass123!", raanana_lat + 0.005, raanana_lon, 0.0005)
     
-    driver2 = run_driver("AgentDriver", "Pass123!", 32.3200, 34.8500, 0.004) 
+    driver2 = run_driver("AgentDriver", "Pass123!", raanana_lat - 0.005, raanana_lon + 0.002, -0.0005) 
     
     await asyncio.gather(driver1, driver2)
 

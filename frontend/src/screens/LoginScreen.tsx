@@ -47,7 +47,7 @@ export default function LoginScreen() {
             await SecureStore.setItemAsync('user_token', data.access_token);
 
             // Navigate to Home
-            navigation.replace('Home');
+            navigation.replace('Dashboard');
 
         } catch (error: any) {
             console.error("❌ Login Error:", error);
