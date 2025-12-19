@@ -1,19 +1,44 @@
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
+from jose import jwt, JWTError
+from sqlmodel import select
 from app.core.socket_manager import manager
 from app.core.database import get_session
-from app.models.domain import Convoy
+from app.core.security import SECRET_KEY, ALGORITHM
+from app.models.domain import Convoy, User
 import uuid
 
 router = APIRouter()
 
-@router.websocket("/{convoy_id}/{user_id}")
+async def get_user_from_token(token: str, session: AsyncSession) -> User:
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username: str = payload.get("sub")
+        if username is None:
+            return None
+    except JWTError:
+        return None
+        
+    statement = select(User).where(User.username == username)
+    result = await session.execute(statement)
+    user = result.scalars().first()
+    return user
+
+@router.websocket("/{convoy_id}")
 async def websocket_endpoint(
     websocket: WebSocket, 
     convoy_id: str, 
-    user_id: str,
+    token: str = Query(...),
     session: AsyncSession = Depends(get_session)
 ):
+    user = await get_user_from_token(token, session)
+    if not user:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+
+    # Use user.id from the validated token
+    user_id = str(user.id)
+
     await manager.connect(convoy_id, websocket)
     
     try:
