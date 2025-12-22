@@ -1,8 +1,9 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, Button, FlatList, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, Button, FlatList, StyleSheet, TouchableOpacity, Alert, Modal, TextInput } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { API_URL } from '../config';
 
 interface Convoy {
     id: string;
@@ -15,6 +16,10 @@ export default function DashboardScreen() {
     const navigation = useNavigation<NativeStackNavigationProp<any>>();
     const [convoys, setConvoys] = useState<Convoy[]>([]);
 
+    // Join Modal State
+    const [joinModalVisible, setJoinModalVisible] = useState(false);
+    const [inviteCode, setInviteCode] = useState('');
+
     const fetchConvoys = async () => {
         try {
             const token = await SecureStore.getItemAsync('user_token');
@@ -23,7 +28,7 @@ export default function DashboardScreen() {
                 return;
             }
 
-            const response = await fetch('http://192.168.1.237:8000/api/v1/convoys/mine', {
+            const response = await fetch(`${API_URL}/convoys/mine`, {
                 headers: {
                     'Authorization': `Bearer ${token}`
                 }
@@ -49,7 +54,7 @@ export default function DashboardScreen() {
     const handleCreateConvoy = async () => {
         try {
             const token = await SecureStore.getItemAsync('user_token');
-            const response = await fetch('http://192.168.1.237:8000/api/v1/convoys/', {
+            const response = await fetch(`${API_URL}/convoys/`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -75,6 +80,42 @@ export default function DashboardScreen() {
         } catch (error) {
             console.error('Error creating convoy:', error);
             Alert.alert('Error', 'Network request failed');
+        }
+    };
+
+    const handleJoinConvoy = async () => {
+        if (!inviteCode.trim()) {
+            Alert.alert("Error", "Please enter a valid invite code");
+            return;
+        }
+
+        try {
+            const token = await SecureStore.getItemAsync('user_token');
+            const response = await fetch(`${API_URL}/convoys/join`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    invite_code: inviteCode.trim().toUpperCase() // Ensure upper case if generated that way
+                })
+            });
+
+            if (response.ok) {
+                const convoy = await response.json();
+                setJoinModalVisible(false);
+                setInviteCode('');
+                // Navigate to Map with convoyId
+                navigation.navigate('Map', { convoyId: convoy.id });
+            } else {
+                // If 404 or other error
+                const errorData = await response.json();
+                Alert.alert("Invalid Code", "Could not find a convoy with that code.");
+            }
+        } catch (error) {
+            console.error('Error joining convoy:', error);
+            Alert.alert("Error", "Network request failed");
         }
     };
 
@@ -113,7 +154,39 @@ export default function DashboardScreen() {
 
             <View style={styles.footer}>
                 <Button title="New Convoy" onPress={handleCreateConvoy} />
+                <TouchableOpacity
+                    style={styles.joinButton}
+                    onPress={() => setJoinModalVisible(true)}
+                >
+                    <Text style={styles.joinButtonText}>Join Convoy</Text>
+                </TouchableOpacity>
             </View>
+
+            {/* Join Convoy Modal */}
+            <Modal
+                animationType="slide"
+                transparent={true}
+                visible={joinModalVisible}
+                onRequestClose={() => setJoinModalVisible(false)}
+            >
+                <View style={styles.centeredView}>
+                    <View style={styles.modalView}>
+                        <Text style={styles.modalTitle}>Join a Convoy</Text>
+                        <TextInput
+                            style={styles.input}
+                            placeholder="Enter Invite Code"
+                            value={inviteCode}
+                            onChangeText={setInviteCode}
+                            autoCapitalize="characters"
+                            autoCorrect={false}
+                        />
+                        <View style={styles.modalButtons}>
+                            <Button title="Cancel" color="red" onPress={() => setJoinModalVisible(false)} />
+                            <Button title="Join" onPress={handleJoinConvoy} />
+                        </View>
+                    </View>
+                </View>
+            </Modal>
         </View>
     );
 }
@@ -158,5 +231,66 @@ const styles = StyleSheet.create({
     },
     footer: {
         padding: 20,
+        gap: 10,
     },
+    joinButton: {
+        backgroundColor: 'transparent',
+        borderWidth: 2,
+        borderColor: '#007AFF',
+        borderRadius: 8,
+        padding: 12,
+        alignItems: 'center',
+        marginTop: 10,
+    },
+    joinButtonText: {
+        color: '#007AFF',
+        fontWeight: 'bold',
+        fontSize: 16,
+    },
+    // Modal Styles
+    centeredView: {
+        flex: 1,
+        justifyContent: "center",
+        alignItems: "center",
+        backgroundColor: 'rgba(0,0,0,0.5)'
+    },
+    modalView: {
+        margin: 20,
+        backgroundColor: "white",
+        borderRadius: 20,
+        padding: 35,
+        alignItems: "center",
+        shadowColor: "#000",
+        shadowOffset: {
+            width: 0,
+            height: 2
+        },
+        shadowOpacity: 0.25,
+        shadowRadius: 4,
+        elevation: 5,
+        width: '80%'
+    },
+    modalTitle: {
+        marginBottom: 15,
+        textAlign: "center",
+        fontSize: 20,
+        fontWeight: 'bold'
+    },
+    input: {
+        height: 50,
+        width: '100%',
+        borderColor: 'gray',
+        borderWidth: 1,
+        borderRadius: 10,
+        paddingHorizontal: 10,
+        marginBottom: 20,
+        fontSize: 18,
+        textAlign: 'center'
+    },
+    modalButtons: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        width: '100%',
+        gap: 10
+    }
 });

@@ -3,8 +3,9 @@ import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityInd
 import * as SecureStore from 'expo-secure-store';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { API_URL } from '../config';
 
-const API_URL = "http://192.168.1.237:8000/api/v1";
+
 
 export default function LoginScreen() {
     const navigation = useNavigation<NativeStackNavigationProp<any>>();
