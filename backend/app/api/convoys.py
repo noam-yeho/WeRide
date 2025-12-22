@@ -6,6 +6,7 @@ from typing import List
 from app.api.deps import get_current_user
 from app.core.database import get_session
 from app.models.domain import Convoy, ConvoyCreate, ConvoyRead, ConvoyMember, ConvoyRole, User
+from app.core.routing import get_route_geometry
 from sqlmodel import SQLModel
 import secrets
 import string
@@ -120,3 +121,31 @@ async def get_convoy(
     if not convoy:
         raise HTTPException(status_code=404, detail="Convoy not found")
     return convoy
+
+@router.get("/{convoy_id}/route")
+async def get_convoy_route(
+    convoy_id: uuid.UUID,
+    user_lat: float,
+    user_lon: float,
+    session: AsyncSession = Depends(get_session)
+):
+    """
+    Get the route geometry from user_lat/lon to the convoy's destination.
+    """
+    result = await session.execute(
+        select(Convoy).where(Convoy.id == convoy_id)
+    )
+    convoy = result.scalars().first()
+    if not convoy:
+        raise HTTPException(status_code=404, detail="Convoy not found")
+        
+    if not convoy.destination_lat or not convoy.destination_lon:
+        # If no destination set, return empty route
+        return {"route": []}
+
+    path = await get_route_geometry(
+        user_lat, user_lon, 
+        convoy.destination_lat, convoy.destination_lon
+    )
+    
+    return {"route": path}
