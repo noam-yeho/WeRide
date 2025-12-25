@@ -10,7 +10,6 @@ def utc_now():
 
 class UserBase(SQLModel):
     username: str = Field(index=True, unique=True)
-    phone_number: str = Field(index=True, unique=True)
     full_name: Optional[str] = None
 
 class ConvoyRole(str, Enum):
