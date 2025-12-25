@@ -25,6 +25,7 @@ class ConvoyMember(SQLModel, table=True):
 class User(UserBase, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     hashed_password: str
+    is_guest: bool = Field(default=False)
     created_at: datetime = Field(default_factory=utc_now) # Updated
     
     convoys: List["Convoy"] = Relationship(back_populates="members", link_model=ConvoyMember)

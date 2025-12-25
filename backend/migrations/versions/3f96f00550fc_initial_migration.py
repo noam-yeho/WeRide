@@ -37,6 +37,7 @@ def upgrade() -> None:
     op.create_table('user',
     sa.Column('username', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column('full_name', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+    sa.Column('is_guest', sa.Boolean(), server_default=sa.text('false'), nullable=False),
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('created_at', sa.DateTime(), nullable=False),
     sa.PrimaryKeyConstraint('id')
