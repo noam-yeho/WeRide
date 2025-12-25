@@ -24,4 +24,4 @@ async def root(name: str = "Noam"):
 
 @app.get("/health")
 async def health_check():
-    return {"db": "connected", "redis": "connected"}
+    return {"db": "connected"}
