@@ -15,11 +15,7 @@ async def signup(user: UserCreate, session: AsyncSession = Depends(get_session))
     if existing_user:
         raise HTTPException(status_code=400, detail="Username already taken")
     
-    # Check if phone exists
-    result_phone = await session.execute(select(User).where(User.phone_number == user.phone_number))
-    existing_phone = result_phone.scalars().first()
-    if existing_phone:
-        raise HTTPException(status_code=400, detail="Phone number already registered")
+
 
     # Prepare user data
     user_data = user.dict()

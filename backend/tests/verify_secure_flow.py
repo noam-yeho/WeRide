@@ -13,7 +13,7 @@ async def main():
         u1 = f"u1_{uuid.uuid4().hex[:6]}"
         p1 = "password"
         print(f"Signing up {u1}...")
-        resp = await client.post(f"{BASE_URL}/users/signup", json={"username": u1, "password": p1, "phone_number": u1})
+        resp = await client.post(f"{BASE_URL}/users/signup", json={"username": u1, "password": p1})
         resp.raise_for_status()
         
         # Login User 1
@@ -42,7 +42,7 @@ async def main():
         # Signup User 2
         u2 = f"u2_{uuid.uuid4().hex[:6]}"
         p2 = "password"
-        resp = await client.post(f"{BASE_URL}/users/signup", json={"username": u2, "password": p2, "phone_number": u2})
+        resp = await client.post(f"{BASE_URL}/users/signup", json={"username": u2, "password": p2})
         resp.raise_for_status()
         
         # Login User 2

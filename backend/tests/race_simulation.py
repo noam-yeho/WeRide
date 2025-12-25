@@ -12,7 +12,6 @@ async def get_auth_token(username, password):
     async with httpx.AsyncClient() as client:
         signup_payload = {
             "username": username,
-            "phone_number": f"050{username.encode('utf-8').hex()[:7]}",
             "full_name": f"{username} Driver",
             "password": password
         }

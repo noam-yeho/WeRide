@@ -8,7 +8,7 @@ async def test_auth():
         print("🔐 1. Registering new user...")
         signup_payload = {
             "username": "TestDriver",
-            "phone_number": "0521234567",
+
             "full_name": "Test Driver",
             "password": "MySecurePassword123"
         }
