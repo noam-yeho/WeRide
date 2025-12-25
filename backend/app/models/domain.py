@@ -60,4 +60,5 @@ class ConvoyRead(ConvoyCreate):
     id: uuid.UUID
     invite_code: str
     status: str
+    share_link: Optional[str] = None
     members: List[UserRead]

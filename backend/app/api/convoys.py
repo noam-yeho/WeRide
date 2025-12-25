@@ -17,6 +17,9 @@ router = APIRouter()
 class JoinConvoyRequest(SQLModel):
     invite_code: str
 
+def get_share_link(invite_code: str) -> str:
+    return f"https://weride.app/join?code={invite_code}"
+
 def generate_invite_code(length: int = 6) -> str:
     chars = string.ascii_uppercase + string.digits
     return ''.join(secrets.choice(chars) for _ in range(length))
@@ -61,7 +64,12 @@ async def create_convoy(
     result = await session.execute(
         select(Convoy).where(Convoy.id == convoy_id).options(selectinload(Convoy.members))
     )
-    return result.scalars().first()
+    db_convoy = result.scalars().first()
+    
+    # FIX: Revert to from_orm to correctly handle SQLModel objects
+    response = ConvoyRead.from_orm(db_convoy)
+    response.share_link = get_share_link(db_convoy.invite_code)
+    return response
 
 @router.post("/join", response_model=ConvoyRead)
 async def join_convoy(
@@ -78,7 +86,10 @@ async def join_convoy(
         raise HTTPException(status_code=404, detail="Convoy not found")
 
     if any(u.id == current_user.id for u in convoy.members):
-        return convoy
+        # FIX: Revert to from_orm
+        response = ConvoyRead.from_orm(convoy)
+        response.share_link = get_share_link(convoy.invite_code)
+        return response
 
     member = ConvoyMember(
         convoy_id=convoy.id,
@@ -94,7 +105,11 @@ async def join_convoy(
         select(Convoy).where(Convoy.id == convoy_id).options(selectinload(Convoy.members))
     )
     final_convoy = result.scalars().first()
-    return final_convoy
+    
+    # FIX: Revert to from_orm
+    response = ConvoyRead.from_orm(final_convoy)
+    response.share_link = get_share_link(final_convoy.invite_code)
+    return response
 
 @router.get("/mine", response_model=List[ConvoyRead])
 async def get_my_convoys(
@@ -107,7 +122,14 @@ async def get_my_convoys(
     )
     user_with_convoys = result.scalars().first()
     
-    return user_with_convoys.convoys
+    response_list = []
+    for c in user_with_convoys.convoys:
+        # FIX: Revert to from_orm
+        c_read = ConvoyRead.from_orm(c)
+        c_read.share_link = get_share_link(c.invite_code)
+        response_list.append(c_read)
+        
+    return response_list
 
 @router.get("/{convoy_id}", response_model=ConvoyRead)
 async def get_convoy(
@@ -120,7 +142,11 @@ async def get_convoy(
     convoy = result.scalars().first()
     if not convoy:
         raise HTTPException(status_code=404, detail="Convoy not found")
-    return convoy
+        
+    # FIX: Revert to from_orm
+    response = ConvoyRead.from_orm(convoy)
+    response.share_link = get_share_link(convoy.invite_code)
+    return response
 
 @router.get("/{convoy_id}/route")
 async def get_convoy_route(

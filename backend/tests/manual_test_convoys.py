@@ -61,6 +61,12 @@ async def test_convoys_flow():
         
         # Verify User 1 is leader
         assert len(convoy['members']) == 1
+        
+        # Verify Share Link
+        assert "share_link" in convoy
+        assert convoy["share_link"].startswith("https://weride.app/join?code=")
+        print(f"🔗 Share link verified: {convoy['share_link']}")
+        
         print("Leader check passed.")
 
         # --- 3. JOIN CONVOY (User 2) ---
