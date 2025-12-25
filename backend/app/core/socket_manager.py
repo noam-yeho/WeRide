@@ -32,6 +32,7 @@ class ConnectionManager:
                 del self.convoy_state[convoy_id][user_id]
                 
             if not self.active_connections[convoy_id]:
+                print(f"Ride {convoy_id} is empty. Cleaning up resources.")
                 del self.active_connections[convoy_id]
                 # Clean up memory
                 if convoy_id in self.convoy_destinations:
