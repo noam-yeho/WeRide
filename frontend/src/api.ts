@@ -119,4 +119,32 @@ export const getUserProfile = async (): Promise<UserProfile | null> => {
     }
 };
 
+export const signup = async (userData: { username: string; password: string; full_name?: string }) => {
+    try {
+        const response = await api.post('/users/signup', userData);
+        return response.data;
+    } catch (error: any) {
+        console.error("Signup Error:", error.response?.data || error.message);
+        throw error.response?.data || error;
+    }
+};
+
+export const loginUser = async (username: string, password: string) => {
+    try {
+        const formData = new URLSearchParams();
+        formData.append('username', username);
+        formData.append('password', password);
+
+        // using axios directly to avoid interceptors if needed, or just api is fine but this is auth endpoint
+        const response = await axios.post(`${API_URL}/auth/token`, formData.toString(), {
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+        });
+        return response.data;
+    } catch (error: any) {
+        throw error.response?.data || error;
+    }
+};
+
 export default api;
