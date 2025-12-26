@@ -1,13 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, Alert, TouchableOpacity, Dimensions, StatusBar } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator, Alert, TouchableOpacity, StatusBar } from 'react-native';
 import MapView, { Marker, Polyline, PROVIDER_DEFAULT } from 'react-native-maps';
 import * as Location from 'expo-location';
 import * as SecureStore from 'expo-secure-store';
 import { useRoute, RouteProp, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { API_URL, WS_URL } from '../config';
-import { loginAsGuest } from '../api';
-// import { Menu, Car, Navigation } from 'lucide-react-native'; // Removed: causing issues with Expo, sticking to Ionicons for now
+import { loginAsGuest, createConvoy, getUserProfile } from '../api';
 
 const DARK_MAP_STYLE = [
     { "elementType": "geometry", "stylers": [{ "color": "#242f3e" }] },
@@ -31,7 +30,7 @@ const DARK_MAP_STYLE = [
 ];
 
 type RootStackParamList = {
-    Map: { convoyId?: string }; // Copilot: Made convoyId optional
+    Map: { convoyId?: string };
 };
 
 type MapScreenRouteProp = RouteProp<RootStackParamList, 'Map'>;
@@ -39,7 +38,9 @@ type MapScreenRouteProp = RouteProp<RootStackParamList, 'Map'>;
 export default function MapScreen() {
     const route = useRoute<MapScreenRouteProp>();
     const navigation = useNavigation();
-    const convoyId = route.params?.convoyId; // Optional
+
+    // Internal State for ConvoyID (since it might change from undefined -> new ID)
+    const [currentConvoyId, setCurrentConvoyId] = useState<string | undefined>(route.params?.convoyId);
 
     const mapRef = useRef<MapView>(null);
     const ws = useRef<WebSocket | null>(null);
@@ -51,41 +52,56 @@ export default function MapScreen() {
     const [hasFetchedRoute, setHasFetchedRoute] = useState(false);
     const [isAuthenticated, setIsAuthenticated] = useState(false);
 
+    const [statusMessage, setStatusMessage] = useState("Locating...");
+
     // Derived stats
     const [distanceKm, setDistanceKm] = useState<string>('0');
     const [etaMin, setEtaMin] = useState<string>('0');
     const [arrivalTime, setArrivalTime] = useState<string>('--:--');
 
-    // 0. Silent Login Check
+    // 0. Initial Setup: Silent Login -> Free Drive -> Auto Create Convoy
     useEffect(() => {
-        const checkAuth = async () => {
+        const checkAuthAndSetup = async () => {
+            // 1. Auth Check
             let token = await SecureStore.getItemAsync('user_token');
             if (!token) {
                 console.log("⚠️ No token found. Initiating silent login...");
+                setStatusMessage("Authenticating...");
                 token = await loginAsGuest();
-            } else {
-                console.log("✅ Token found.");
             }
 
             if (token) {
                 setIsAuthenticated(true);
             } else {
                 Alert.alert("Authentication Failed", "Could not sign you in.");
+                return;
+            }
+
+            // 2. Convoy Check (Invariant: MUST be in a convoy)
+            if (!currentConvoyId) {
+                setStatusMessage("Starting Drive...");
+                // Create a "Solo Drive" convoy
+                const newConvoy = await createConvoy("Solo Drive", "No Destination", 0, 0);
+                if (newConvoy) {
+                    setCurrentConvoyId(newConvoy.id);
+                } else {
+                    Alert.alert("Error", "Failed to start drive.");
+                }
             }
         };
-        checkAuth();
+        checkAuthAndSetup();
     }, []);
 
-    // 1. Fetch Convoy Details (Only if convoyId exists)
+    // 1. Fetch Convoy Details (Once we have a convoyId)
     useEffect(() => {
-        if (!convoyId || !isAuthenticated) return;
+        if (!currentConvoyId || !isAuthenticated) return;
 
         const fetchConvoyDetails = async () => {
             try {
                 const token = await SecureStore.getItemAsync('user_token');
                 if (!token) return;
 
-                const response = await fetch(`${API_URL}/convoys/${convoyId}`, {
+                const response = await fetch(`${API_URL}/convoys/${currentConvoyId}`, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
 
@@ -98,7 +114,7 @@ export default function MapScreen() {
             }
         };
         fetchConvoyDetails();
-    }, [convoyId, isAuthenticated]);
+    }, [currentConvoyId, isAuthenticated]);
 
     // 2. Setup Permissions, Location Watching & WebSocket
     useEffect(() => {
@@ -111,11 +127,11 @@ export default function MapScreen() {
                 return;
             }
 
-            // WebSocket Connection (Only if convoyId exists)
-            if (convoyId && isAuthenticated) {
+            // WebSocket Connection
+            if (currentConvoyId && isAuthenticated) {
                 const token = await SecureStore.getItemAsync('user_token');
                 if (token) {
-                    const socketUrl = `${WS_URL}/${convoyId}?token=${token}`;
+                    const socketUrl = `${WS_URL}/${currentConvoyId}?token=${token}`;
                     ws.current = new WebSocket(socketUrl);
                     ws.current.onopen = () => console.log("✅ Connected to Convoy!");
                     ws.current.onmessage = (e) => {
@@ -151,17 +167,18 @@ export default function MapScreen() {
             );
         };
 
-        if (isAuthenticated || !convoyId) {
-            // Run setup if authenticated OR if we are in free drive mode (don't strictly need auth for local map, but good to have)
-            // Actually we do need location permission regardless of auth.
+        if (isAuthenticated && currentConvoyId) {
             setup();
-        };
+        } else if (isAuthenticated && !currentConvoyId) {
+            // Just request permissions early while waiting for convoy creation
+            Location.requestForegroundPermissionsAsync();
+        }
 
         return () => {
             if (ws.current) ws.current.close();
             if (locationSubscription) locationSubscription.remove();
         };
-    }, [convoyId, isAuthenticated]);
+    }, [currentConvoyId, isAuthenticated]);
 
     // 3. React to Location Updates: Animate Camera + Fetch Route (If convoy)
     useEffect(() => {
@@ -179,7 +196,7 @@ export default function MapScreen() {
         });
 
         // Fetch Route immediately if not done yet AND we have a convoy
-        if (convoyId && !hasFetchedRoute && isAuthenticated) {
+        if (currentConvoyId && !hasFetchedRoute && isAuthenticated) {
             fetchRoute(location.coords);
             setHasFetchedRoute(true);
         }
@@ -189,7 +206,7 @@ export default function MapScreen() {
             calculateStats(location.coords);
         }
 
-    }, [location, isAuthenticated]);
+    }, [location, isAuthenticated, currentConvoyId]);
 
     const fetchRoute = async (coords: { latitude: number; longitude: number }) => {
         try {
@@ -197,7 +214,7 @@ export default function MapScreen() {
             if (!token) return;
 
             console.log("Fetching route...");
-            const response = await fetch(`${API_URL}/convoys/${convoyId}/route?user_lat=${coords.latitude}&user_lon=${coords.longitude}`, {
+            const response = await fetch(`${API_URL}/convoys/${currentConvoyId}/route?user_lat=${coords.latitude}&user_lon=${coords.longitude}`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
 
@@ -260,26 +277,45 @@ export default function MapScreen() {
         return deg * (Math.PI / 180);
     }
 
-    const handleLeave = () => {
-        if (convoyId) {
-            Alert.alert("Exit Convoy", "Are you sure you want to leave the convoy?", [
-                { text: "Cancel", style: "cancel" },
-                { text: "Exit", style: 'destructive', onPress: () => navigation.goBack() } // This might need logic to actually 'leave' API wise if needed
-            ]);
+    const handleMenu = async () => {
+        // Fetch user profile to decide what to show
+        const user = await getUserProfile();
+
+        const isGuest = user?.is_guest;
+
+        const options = [];
+
+        if (isGuest) {
+            options.push({
+                text: "Sign Up / Save Account",
+                onPress: () => Alert.alert("Sign Up", "Navigate to Signup Screen")
+            });
         } else {
-            // In free drive, maybe just open menu?
-            Alert.alert("Menu", "Dashboard options", [
-                { text: "Login / Dashboard", onPress: () => navigation.navigate("Dashboard" as never) }, // Quick hack for navigation type
-                { text: "Cancel", style: "cancel" }
-            ]);
+            options.push({
+                text: "Logout",
+                style: 'destructive',
+                onPress: async () => {
+                    await SecureStore.deleteItemAsync('user_token');
+                    navigation.replace('Login' as never);
+                }
+            });
         }
+
+        options.push({ text: "Dashboard / Join", onPress: () => navigation.navigate("Dashboard" as never) });
+        options.push({ text: "Cancel", style: "cancel" });
+
+        Alert.alert(
+            "Menu",
+            `Logged in as: ${user?.username || 'Guest'}`,
+            options as any
+        );
     };
 
-    if (!location) {
+    if (!location && !convoy && !currentConvoyId) {
         return (
             <View style={styles.loadingContainer}>
                 <ActivityIndicator size="large" color="#4A89F3" />
-                <Text style={{ marginTop: 10, color: '#fff' }}>Locating...</Text>
+                <Text style={{ marginTop: 10, color: '#fff' }}>{statusMessage}</Text>
             </View>
         );
     }
@@ -356,8 +392,8 @@ export default function MapScreen() {
                 )}
             </MapView>
 
-            {/* Top Info Bar (Only show if in Convoy Mode) */}
-            {convoyId && (
+            {/* Top Info Bar (Only show if we have a real destination/convoy with friends, for now just show if we have route) */}
+            {routeCoordinates.length > 0 && (
                 <View style={styles.topBar}>
                     <View style={styles.topBarContent}>
                         <Ionicons name="arrow-up" size={32} color="#fff" />
@@ -369,19 +405,17 @@ export default function MapScreen() {
                 </View>
             )}
 
-            {/* Menu Button (Floating when NO bottom sheet) - or always visible? */}
-            {!convoyId && (
-                <TouchableOpacity style={styles.floatingMenuButton} onPress={handleLeave}>
-                    <Ionicons name="menu" size={32} color="#fff" />
-                </TouchableOpacity>
-            )}
+            {/* Floating Menu Button (Always visible now, provides consistency) */}
+            <TouchableOpacity style={styles.floatingMenuButton} onPress={handleMenu}>
+                <Ionicons name="menu" size={32} color="#fff" />
+            </TouchableOpacity>
 
 
-            {/* Bottom Panel (Only show if in Convoy Mode) */}
-            {convoyId && (
+            {/* Bottom Panel (Only show if we have a Destination/Convoy Info) */}
+            {convoy && convoy.destination_lat ? (
                 <View style={styles.bottomSheet}>
                     <View style={styles.bottomParams}>
-                        <TouchableOpacity style={styles.exitButton} onPress={handleLeave}>
+                        <TouchableOpacity style={styles.exitButton} onPress={handleMenu}>
                             <Ionicons name="close" size={28} color="#fff" />
                         </TouchableOpacity>
 
@@ -400,7 +434,7 @@ export default function MapScreen() {
                         </TouchableOpacity>
                     </View>
                 </View>
-            )}
+            ) : null}
         </View>
     );
 }
@@ -413,7 +447,7 @@ const styles = StyleSheet.create({
     topBar: {
         position: 'absolute',
         top: 60,
-        left: 20,
+        left: 80, // Moved to make room for menu button
         right: 20,
         backgroundColor: '#1E1E1E',
         borderRadius: 16,
@@ -428,7 +462,7 @@ const styles = StyleSheet.create({
     topBarDistance: { color: '#fff', fontSize: 24, fontWeight: 'bold' },
     topBarInstruction: { color: '#aaa', fontSize: 16, marginTop: 2 },
 
-    // Floating Menu Button (Free Drive)
+    // Floating Menu Button
     floatingMenuButton: {
         position: 'absolute',
         top: 60,

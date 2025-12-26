@@ -1,11 +1,16 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_session
+from app.api.deps import get_current_user
 from app.models.domain import User, UserCreate, UserRead
 from sqlalchemy.future import select
 from app.core.security import get_password_hash
 
 router = APIRouter()
+
+@router.get("/me", response_model=UserRead)
+async def read_users_me(current_user: User = Depends(get_current_user)):
+    return current_user
 
 @router.post("/signup", response_model=UserRead)
 async def signup(user: UserCreate, session: AsyncSession = Depends(get_session)):

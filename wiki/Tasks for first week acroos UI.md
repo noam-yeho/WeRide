@@ -3,3 +3,4 @@
 [x] Able the option of anonymous use of the app.
 [x] Set the option to link the inventation to the convoy via WhatsApp or any other communicate option even to copy the link.
 [x] Remove phone number in the user creation so we will not need to consider security and privity considerations at least in the MVP.
+[]() Change the id of user to uuid4.
