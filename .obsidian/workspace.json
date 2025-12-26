@@ -186,6 +186,9 @@
   },
   "active": "6d28b0fed5b6ca77",
   "lastOpenFiles": [
+    "frontend/src/screens/SignupScreen.tsx",
+    "test.txt",
+    "full_code.txt",
     "frontend/src/api.ts",
     "frontend/node_modules/lucide-react-native/dist/esm/icons/grid-2x2-check.js.map",
     "frontend/node_modules/lucide-react-native/dist/cjs/icons/grid-2x2-check.js.map",
@@ -194,7 +197,6 @@
     "frontend/node_modules/css-tree/lib/syntax/pseudo/common/selectorList.js",
     "frontend/node_modules/css-tree/lib/syntax/pseudo/common/nthWithOfClause.js",
     "frontend/node_modules/css-tree/lib/syntax/node/Value.js",
-    "frontend/node_modules/css-tree/lib/syntax/node/Url.js",
     "frontend/node_modules/css-tree/node_modules/source-map/README.md",
     "frontend/node_modules/css-tree/node_modules/source-map/CHANGELOG.md",
     "frontend/node_modules/css-tree/README.md",

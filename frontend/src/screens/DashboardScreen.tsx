@@ -4,7 +4,7 @@ import * as SecureStore from 'expo-secure-store';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { API_URL } from '../config';
-import { getUserProfile } from '../api';
+import { getUserProfile, UserProfile } from '../api';
 
 interface Convoy {
     id: string;
@@ -16,7 +16,7 @@ interface Convoy {
 export default function DashboardScreen() {
     const navigation = useNavigation<NativeStackNavigationProp<any>>();
     const [convoys, setConvoys] = useState<Convoy[]>([]);
-    const [isGuest, setIsGuest] = useState(true); // Default to guest until fetched
+    const [user, setUser] = useState<UserProfile | null>(null); // Store full user object
 
     // Join Modal State
     const [joinModalVisible, setJoinModalVisible] = useState(false);
@@ -26,26 +26,32 @@ export default function DashboardScreen() {
         try {
             const token = await SecureStore.getItemAsync('user_token');
             if (!token) {
-                navigation.replace('Login');
-                return;
+                // If no token, maybe logic to guest login or redirect to Login? 
+                // Currently API handles auto-guest login, but if we are here, we might want to check status.
+                // Assuming we have a token or we let the API calls fail/auto-login.
             }
 
             // 1. Fetch Profile
-            const user = await getUserProfile();
-            setIsGuest(user?.is_guest ?? true);
+            const userProfile = await getUserProfile();
+            setUser(userProfile);
 
             // 2. Fetch Convoys
-            const response = await fetch(`${API_URL}/convoys/mine`, {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            });
+            // Only fetch convoys if we have a valid token (which we should if getUserProfile succeeded or we have a token)
+            // But let's check token again or just rely on API interceptor
+            const currentToken = await SecureStore.getItemAsync('user_token');
+            if (currentToken) {
+                const response = await fetch(`${API_URL}/convoys/mine`, {
+                    headers: {
+                        'Authorization': `Bearer ${currentToken}`
+                    }
+                });
 
-            if (response.ok) {
-                const data = await response.json();
-                setConvoys(data);
-            } else {
-                console.error('Failed to fetch convoys');
+                if (response.ok) {
+                    const data = await response.json();
+                    setConvoys(data);
+                } else {
+                    console.error('Failed to fetch convoys');
+                }
             }
         } catch (error) {
             console.error('Error fetching data:', error);
@@ -64,18 +70,12 @@ export default function DashboardScreen() {
         }, [])
     );
 
-    // Update Header Button based on isGuest
+    // Clear Header Buttons
     React.useLayoutEffect(() => {
         navigation.setOptions({
-            headerRight: () => (
-                isGuest ? (
-                    <Button title="Sign In" onPress={() => navigation.navigate('Login')} />
-                ) : (
-                    <Button title="Logout" onPress={handleLogout} />
-                )
-            ),
+            headerRight: undefined, // Clear any previous buttons
         });
-    }, [navigation, isGuest]);
+    }, [navigation]);
 
 
     const handleCreateConvoy = async () => {
@@ -168,8 +168,33 @@ export default function DashboardScreen() {
     return (
         <View style={styles.container}>
             <View style={styles.header}>
-                <Text style={styles.headerTitle}>My Convoys</Text>
-                {/* Header Right Button is handled via API now */}
+                <View>
+                    <Text style={{ fontSize: 16, color: '#666' }}>
+                        Hello, {user?.is_guest ? "Guest" : (user?.username || "Driver")}
+                    </Text>
+                    {/* Auth Buttons for Guest */}
+                    {(user?.is_guest ?? true) ? (
+                        <View style={styles.authRow}>
+                            <TouchableOpacity
+                                style={[styles.authButton, { backgroundColor: '#007AFF' }]}
+                                onPress={() => navigation.navigate('Login')}
+                            >
+                                <Text style={styles.authButtonText}>Sign In</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[styles.authButton, { backgroundColor: '#34C759' }]}
+                                onPress={() => navigation.navigate('Signup')}
+                            >
+                                <Text style={styles.authButtonText}>Create Account</Text>
+                            </TouchableOpacity>
+                        </View>
+                    ) : (
+                        <TouchableOpacity onPress={handleLogout} style={{ marginTop: 5 }}>
+                            <Text style={{ color: '#FF3B30', fontWeight: '600' }}>Logout</Text>
+                        </TouchableOpacity>
+                    )}
+                    <Text style={[styles.headerTitle, { marginTop: 10 }]}>My Convoys</Text>
+                </View>
             </View>
 
             <FlatList
@@ -234,6 +259,21 @@ const styles = StyleSheet.create({
     headerTitle: {
         fontSize: 24,
         fontWeight: 'bold',
+    },
+    authRow: {
+        flexDirection: 'row',
+        marginTop: 10,
+        gap: 10,
+    },
+    authButton: {
+        paddingVertical: 8,
+        paddingHorizontal: 16,
+        borderRadius: 20,
+    },
+    authButtonText: {
+        color: 'white',
+        fontWeight: 'bold',
+        fontSize: 14,
     },
     list: {
         paddingHorizontal: 20,
