@@ -84,9 +84,9 @@ export default function MapScreen() {
             if (deepLinkCode) {
                 console.log(`🔗 Detected Invite Code: ${deepLinkCode}`);
                 setStatusMessage(`Joining Convoy ${deepLinkCode}...`);
-                
+
                 const joinedConvoy = await handleJoinViaDeepLink(deepLinkCode, token);
-                
+
                 if (joinedConvoy) {
                     setCurrentConvoyId(joinedConvoy.id);
                     Alert.alert("Success", `You joined ${joinedConvoy.name}!`);
@@ -111,7 +111,7 @@ export default function MapScreen() {
             }
         };
         checkAuthAndSetup();
-    }, [deepLinkCode]); // Add deepLinkCode dependency
+    }, [deepLinkCode, currentConvoyId]); // Add deepLinkCode and currentConvoyId dependencies
 
     const handleJoinViaDeepLink = async (code: string, token: string) => {
         try {
@@ -340,6 +340,28 @@ export default function MapScreen() {
         );
     };
 
+    const handleExitConvoy = () => {
+        Alert.alert(
+            "End Ride",
+            "Are you sure you want to leave this convoy?",
+            [
+                {
+                    text: "Cancel",
+                    style: "cancel"
+                },
+                {
+                    text: "End Ride",
+                    style: "destructive",
+                    onPress: () => {
+                        setCurrentConvoyId(undefined);
+                        setConvoy(null);
+                        setRouteCoordinates([]);
+                    }
+                }
+            ]
+        );
+    };
+
     if (!location && !convoy && !currentConvoyId) {
         return (
             <View style={styles.loadingContainer}>
@@ -444,7 +466,7 @@ export default function MapScreen() {
             {convoy && convoy.destination_lat ? (
                 <View style={styles.bottomSheet}>
                     <View style={styles.bottomParams}>
-                        <TouchableOpacity style={styles.exitButton} onPress={handleMenu}>
+                        <TouchableOpacity style={styles.exitButton} onPress={handleExitConvoy}>
                             <Ionicons name="close" size={28} color="#fff" />
                         </TouchableOpacity>
 
