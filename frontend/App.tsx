@@ -8,9 +8,25 @@ import SignupScreen from './src/screens/SignupScreen';
 
 const Stack = createNativeStackNavigator();
 
+import * as Linking from 'expo-linking';
+
+const prefix = Linking.createURL('/');
+
 export default function App() {
+  const linking = {
+    prefixes: [prefix, 'weride://'],
+    config: {
+      screens: {
+        Map: 'convoy/join',
+        Login: 'login',
+        Signup: 'signup',
+        Dashboard: 'dashboard',
+      },
+    },
+  };
+
   return (
-    <NavigationContainer>
+    <NavigationContainer linking={linking}>
       <Stack.Navigator initialRouteName="Map">
         <Stack.Screen name="Login" component={LoginScreen} />
         <Stack.Screen name="Dashboard" component={DashboardScreen} />

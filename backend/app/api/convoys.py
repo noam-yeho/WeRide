@@ -18,7 +18,7 @@ class JoinConvoyRequest(SQLModel):
     invite_code: str
 
 def get_share_link(invite_code: str) -> str:
-    return f"https://weride.app/join?code={invite_code}"
+    return f"weride://convoy/join?code={invite_code}"
 
 def generate_invite_code(length: int = 6) -> str:
     chars = string.ascii_uppercase + string.digits

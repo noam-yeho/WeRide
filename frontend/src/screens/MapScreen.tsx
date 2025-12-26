@@ -30,7 +30,7 @@ const DARK_MAP_STYLE = [
 ];
 
 type RootStackParamList = {
-    Map: { convoyId?: string };
+    Map: { convoyId?: string; code?: string };
 };
 
 type MapScreenRouteProp = RouteProp<RootStackParamList, 'Map'>;
@@ -39,11 +39,14 @@ export default function MapScreen() {
     const route = useRoute<MapScreenRouteProp>();
     const navigation = useNavigation();
 
-    // Internal State for ConvoyID (since it might change from undefined -> new ID)
+    // Internal State for ConvoyID
     const [currentConvoyId, setCurrentConvoyId] = useState<string | undefined>(route.params?.convoyId);
+    // State for Deep Link Code
+    const [deepLinkCode, setDeepLinkCode] = useState<string | undefined>(route.params?.code);
 
     const mapRef = useRef<MapView>(null);
     const ws = useRef<WebSocket | null>(null);
+    const locationSubscription = useRef<Location.LocationSubscription | null>(null);
 
     const [location, setLocation] = useState<Location.LocationObject | null>(null);
     const [otherMembers, setOtherMembers] = useState<any[]>([]);
@@ -59,7 +62,7 @@ export default function MapScreen() {
     const [etaMin, setEtaMin] = useState<string>('0');
     const [arrivalTime, setArrivalTime] = useState<string>('--:--');
 
-    // 0. Initial Setup: Silent Login -> Free Drive -> Auto Create Convoy
+    // 0. Initial Setup: Silent Login -> Free Drive OR Join via Code -> Auto Create Convoy if needed
     useEffect(() => {
         const checkAuthAndSetup = async () => {
             // 1. Auth Check
@@ -77,7 +80,25 @@ export default function MapScreen() {
                 return;
             }
 
-            // 2. Convoy Check (Invariant: MUST be in a convoy)
+            // 2. Deep Link Join (Priority)
+            if (deepLinkCode) {
+                console.log(`🔗 Detected Invite Code: ${deepLinkCode}`);
+                setStatusMessage(`Joining Convoy ${deepLinkCode}...`);
+                
+                const joinedConvoy = await handleJoinViaDeepLink(deepLinkCode, token);
+                
+                if (joinedConvoy) {
+                    setCurrentConvoyId(joinedConvoy.id);
+                    Alert.alert("Success", `You joined ${joinedConvoy.name}!`);
+                    setDeepLinkCode(undefined); // Clear code so we don't rejoin on reload
+                    return; // Stop here, don't create a solo drive
+                } else {
+                    Alert.alert("Join Failed", "Invalid invite link or network error. Starting solo drive instead.");
+                    // Fallthrough to solo drive creation
+                }
+            }
+
+            // 3. Convoy Check (Invariant: MUST be in a convoy)
             if (!currentConvoyId) {
                 setStatusMessage("Starting Drive...");
                 // Create a "Solo Drive" convoy
@@ -90,7 +111,31 @@ export default function MapScreen() {
             }
         };
         checkAuthAndSetup();
-    }, []);
+    }, [deepLinkCode]); // Add deepLinkCode dependency
+
+    const handleJoinViaDeepLink = async (code: string, token: string) => {
+        try {
+            const response = await fetch(`${API_URL}/convoys/join`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    invite_code: code.trim().toUpperCase()
+                })
+            });
+
+            if (response.ok) {
+                return await response.json();
+            } else {
+                return null;
+            }
+        } catch (error) {
+            console.error("Deep link join error:", error);
+            return null;
+        }
+    };
 
     // 1. Fetch Convoy Details (Once we have a convoyId)
     useEffect(() => {
@@ -118,8 +163,6 @@ export default function MapScreen() {
 
     // 2. Setup Permissions, Location Watching & WebSocket
     useEffect(() => {
-        let locationSubscription: Location.LocationSubscription | null = null;
-
         const setup = async () => {
             const { status } = await Location.requestForegroundPermissionsAsync();
             if (status !== 'granted') {
@@ -146,7 +189,7 @@ export default function MapScreen() {
             }
 
             // Location Watching
-            locationSubscription = await Location.watchPositionAsync(
+            locationSubscription.current = await Location.watchPositionAsync(
                 {
                     accuracy: Location.Accuracy.High,
                     timeInterval: 2000,
@@ -167,7 +210,7 @@ export default function MapScreen() {
             );
         };
 
-        if (isAuthenticated && currentConvoyId) {
+        if (isAuthenticated && (currentConvoyId || deepLinkCode)) {
             setup();
         } else if (isAuthenticated && !currentConvoyId) {
             // Just request permissions early while waiting for convoy creation
@@ -176,9 +219,9 @@ export default function MapScreen() {
 
         return () => {
             if (ws.current) ws.current.close();
-            if (locationSubscription) locationSubscription.remove();
+            if (locationSubscription.current) locationSubscription.current.remove();
         };
-    }, [currentConvoyId, isAuthenticated]);
+    }, [currentConvoyId, isAuthenticated, deepLinkCode]);
 
     // 3. React to Location Updates: Animate Camera + Fetch Route (If convoy)
     useEffect(() => {
