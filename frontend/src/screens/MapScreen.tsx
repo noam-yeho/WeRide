@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, Alert, TouchableOpacity, StatusBar } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator, Alert, TouchableOpacity, StatusBar, ScrollView, Modal } from 'react-native';
 import MapView, { Marker, Polyline, PROVIDER_DEFAULT } from 'react-native-maps';
 import * as Location from 'expo-location';
 import * as SecureStore from 'expo-secure-store';
@@ -47,6 +47,7 @@ export default function MapScreen() {
     const mapRef = useRef<MapView>(null);
     const ws = useRef<WebSocket | null>(null);
     const locationSubscription = useRef<Location.LocationSubscription | null>(null);
+    const etaRef = useRef<string>("0"); // To access current ETA in callbacks
 
     const [location, setLocation] = useState<Location.LocationObject | null>(null);
     const [otherMembers, setOtherMembers] = useState<any[]>([]);
@@ -56,11 +57,13 @@ export default function MapScreen() {
     const [isAuthenticated, setIsAuthenticated] = useState(false);
 
     const [statusMessage, setStatusMessage] = useState("Locating...");
+    const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
     // Derived stats
     const [distanceKm, setDistanceKm] = useState<string>('0');
     const [etaMin, setEtaMin] = useState<string>('0');
     const [arrivalTime, setArrivalTime] = useState<string>('--:--');
+    const [membersModalVisible, setMembersModalVisible] = useState(false);
 
     // 0. Initial Setup: Silent Login -> Free Drive OR Join via Code -> Auto Create Convoy if needed
     useEffect(() => {
@@ -75,6 +78,15 @@ export default function MapScreen() {
 
             if (token) {
                 setIsAuthenticated(true);
+                // Fetch user profile to get ID
+                try {
+                    const profile = await getUserProfile();
+                    if (profile && profile.id) {
+                        setCurrentUserId(String(profile.id));
+                    }
+                } catch (e) {
+                    console.log("Error fetching profile for ID:", e);
+                }
             } else {
                 Alert.alert("Authentication Failed", "Could not sign you in.");
                 return;
@@ -193,19 +205,10 @@ export default function MapScreen() {
                 {
                     accuracy: Location.Accuracy.High,
                     timeInterval: 2000,
-                    distanceInterval: 5,
+                    distanceInterval: 0, // Force updates for testing
                 },
                 (newLocation) => {
                     setLocation(newLocation);
-
-                    // Send update to WS (Only if connected)
-                    if (ws.current && ws.current.readyState === WebSocket.OPEN) {
-                        const payload = {
-                            lat: newLocation.coords.latitude,
-                            lon: newLocation.coords.longitude
-                        };
-                        ws.current.send(JSON.stringify(payload));
-                    }
                 }
             );
         };
@@ -222,6 +225,20 @@ export default function MapScreen() {
             if (locationSubscription.current) locationSubscription.current.remove();
         };
     }, [currentConvoyId, isAuthenticated, deepLinkCode]);
+
+    // New: Send location update whenever location changes
+    useEffect(() => {
+        if (location && ws.current && ws.current.readyState === WebSocket.OPEN) {
+            const payload = {
+                lat: location.coords.latitude,
+                lon: location.coords.longitude,
+                eta: etaRef.current // Ensure this ref is defined
+            };
+            // Add a log here to verify sending on the phone
+            console.log("📤 Sending WS Update:", payload);
+            ws.current.send(JSON.stringify(payload));
+        }
+    }, [location]);
 
     // 3. React to Location Updates: Animate Camera + Fetch Route (If convoy)
     useEffect(() => {
@@ -265,6 +282,22 @@ export default function MapScreen() {
                 const data = await response.json();
                 if (data.route && data.route.length > 0) {
                     setRouteCoordinates(data.route);
+
+                    // Step A: Handle Real Route Duration
+                    if (data.duration) {
+                        const minutes = Math.ceil(data.duration / 60);
+                        const minsStr = minutes.toString();
+                        setEtaMin(minsStr);
+                        etaRef.current = minsStr;
+
+                        // Update Arrival Time
+                        const now = new Date();
+                        const arrival = new Date(now.getTime() + minutes * 60000);
+                        const hours = arrival.getHours().toString().padStart(2, '0');
+                        const mins = arrival.getMinutes().toString().padStart(2, '0');
+                        setArrivalTime(`${hours}:${mins}`);
+                    }
+
                     calculateStats(coords, data.route);
                 }
             }
@@ -284,24 +317,16 @@ export default function MapScreen() {
 
         setDistanceKm((distMeters / 1000).toFixed(1));
 
-        // Speed in m/s (default 50km/h = ~13.8 m/s)
-        let speedMps = 13.8;
-        // @ts-ignore
-        if (location?.coords?.speed && location.coords.speed > 5) {
-            // @ts-ignore
-            speedMps = location.coords.speed;
-        }
+        // Note: We removed the manual ETA calc here to trust the server/initial OSRM duration logic
+        // as per instructions.
+    };
 
+    const calculateEtaForMember = (distMeters: number) => {
+        // Speed in m/s (default 50km/h = ~13.8 m/s)
+        const speedMps = 13.8;
         const timeSeconds = distMeters / speedMps;
         const minutes = Math.ceil(timeSeconds / 60);
-        setEtaMin(minutes.toString());
-
-        // Calculate Arrival Time (Now + Duration)
-        const now = new Date();
-        const arrival = new Date(now.getTime() + minutes * 60000);
-        const hours = arrival.getHours().toString().padStart(2, '0');
-        const mins = arrival.getMinutes().toString().padStart(2, '0');
-        setArrivalTime(`${hours}:${mins}`);
+        return `${minutes} min`;
     };
 
     function getDistanceFromLatLonInKm(lat1: number, lon1: number, lat2: number, lon2: number) {
@@ -359,6 +384,127 @@ export default function MapScreen() {
                     }
                 }
             ]
+        );
+    };
+
+    const getMemberColor = (id: string) => {
+        const colors = ['#FF3B30', '#FF9500', '#FFCC00', '#4CD964', '#5AC8FA', '#007AFF', '#5856D6', '#FF2D55'];
+        let hash = 0;
+        for (let i = 0; i < id.length; i++) {
+            hash = id.charCodeAt(i) + ((hash << 5) - hash);
+        }
+        return colors[Math.abs(hash) % colors.length];
+    };
+
+    const RenderCollapsedMembers = () => {
+        // Dedup members
+        const uniqueMembers = Array.from(new Map(otherMembers.map(m => [m.user_id, m])).values());
+        if (uniqueMembers.length === 0) return null;
+
+        const displayMembers = uniqueMembers.slice(0, 3);
+        const remainingCount = uniqueMembers.length - 3;
+
+        return (
+            <TouchableOpacity
+                style={styles.facepileContainer}
+                onPress={() => setMembersModalVisible(true)}
+                activeOpacity={0.8}
+            >
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    {displayMembers.map((member, index) => {
+                        const color = getMemberColor(member.user_id || 'unknown');
+                        const initial = member.username ? member.username.charAt(0).toUpperCase() : '?';
+                        return (
+                            <View
+                                key={`facepile-${index}`}
+                                style={[
+                                    styles.facepileAvatar,
+                                    {
+                                        backgroundColor: color,
+                                        zIndex: 3 - index,
+                                        marginLeft: index === 0 ? 0 : -10 // Overlap
+                                    }
+                                ]}
+                            >
+                                <Text style={styles.facepileInitial}>{initial}</Text>
+                            </View>
+                        );
+                    })}
+
+                    {remainingCount > 0 && (
+                        <View style={[styles.facepileAvatar, styles.facepileMoreBadge, { marginLeft: -10, zIndex: 0 }]}>
+                            <Text style={styles.facepileMoreText}>+{remainingCount}</Text>
+                        </View>
+                    )}
+                </View>
+                <Text style={styles.facepileLabel}>Status</Text>
+            </TouchableOpacity>
+        );
+    };
+
+    const MembersListModal = () => {
+        // Sort by distance (if available) - default to 0 if missing
+        const sortedMembers = [...otherMembers].sort((a, b) => {
+            const distA = a.distance || Number.MAX_VALUE;
+            const distB = b.distance || Number.MAX_VALUE;
+            return distA - distB;
+        });
+
+        // Dedup
+        const uniqueMembers = Array.from(new Map(sortedMembers.map(m => [m.user_id, m])).values());
+
+        return (
+            <Modal
+                animationType="slide"
+                transparent={true}
+                visible={membersModalVisible}
+                onRequestClose={() => setMembersModalVisible(false)}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalContent}>
+                        <View style={styles.modalHeader}>
+                            <Text style={styles.modalTitle}>Convoy Status</Text>
+                            <TouchableOpacity onPress={() => setMembersModalVisible(false)} style={styles.closeButton}>
+                                <Ionicons name="close" size={24} color="#fff" />
+                            </TouchableOpacity>
+                        </View>
+
+                        <ScrollView style={styles.modalList} contentContainerStyle={{ paddingBottom: 20 }}>
+                            {uniqueMembers.length === 0 ? (
+                                <Text style={styles.emptyText}>No other members active.</Text>
+                            ) : null}
+
+                            {uniqueMembers.map((member, index) => {
+                                const color = getMemberColor(member.user_id || 'unknown');
+                                const initial = member.username ? member.username.charAt(0).toUpperCase() : '?';
+                                const distMeters = member.distance || 0;
+                                const isMe = String(member.user_id) === String(currentUserId);
+                                // Use member.eta if available, otherwise calculate fallback
+                                const eta = isMe
+                                    ? `${etaMin} min`
+                                    : (member.eta ? `${member.eta} min` : calculateEtaForMember(distMeters));
+
+                                return (
+                                    <View key={`modal-item-${index}`} style={styles.modalRow}>
+                                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                            <View style={[styles.modalAvatar, { backgroundColor: color }]}>
+                                                <Text style={styles.modalAvatarText}>{initial}</Text>
+                                            </View>
+                                            <View style={{ marginLeft: 12 }}>
+                                                <Text style={styles.modalUsername}>
+                                                    {member.username || `User ${member.user_id}`} {isMe ? '(You)' : ''}
+                                                </Text>
+                                                <Text style={styles.modalStatus}>Active</Text>
+                                            </View>
+                                        </View>
+                                        <Text style={styles.modalEta}>{eta}</Text>
+                                    </View>
+                                );
+                            })}
+                        </ScrollView>
+                    </View>
+                </View>
+            </Modal>
         );
     };
 
@@ -464,27 +610,33 @@ export default function MapScreen() {
 
             {/* Bottom Panel (Only show if we have a Destination/Convoy Info) */}
             {convoy && convoy.destination_lat ? (
-                <View style={styles.bottomSheet}>
-                    <View style={styles.bottomParams}>
-                        <TouchableOpacity style={styles.exitButton} onPress={handleExitConvoy}>
-                            <Ionicons name="close" size={28} color="#fff" />
-                        </TouchableOpacity>
+                <>
+                    <RenderCollapsedMembers />
+                    <MembersListModal />
 
-                        <View style={styles.statsContainer}>
-                            <Text style={styles.destinationText} numberOfLines={1}>
-                                {convoy?.destination_name || "Unknown Destination"}
-                            </Text>
-                            <Text style={styles.etaText}>{etaMin} min</Text>
-                            <Text style={styles.detailText}>
-                                <Text style={styles.greenText}>{distanceKm} km</Text> • {arrivalTime}
-                            </Text>
+                    <View style={styles.bottomSheet}>
+
+                        <View style={styles.bottomParams}>
+                            <TouchableOpacity style={styles.exitButton} onPress={handleExitConvoy}>
+                                <Ionicons name="close" size={28} color="#fff" />
+                            </TouchableOpacity>
+
+                            <View style={styles.statsContainer}>
+                                <Text style={styles.destinationText} numberOfLines={1}>
+                                    {convoy?.destination_name || "Unknown Destination"}
+                                </Text>
+                                <Text style={styles.etaText}>{etaMin} min</Text>
+                                <Text style={styles.detailText}>
+                                    <Text style={styles.greenText}>{distanceKm} km</Text> • {arrivalTime}
+                                </Text>
+                            </View>
+
+                            <TouchableOpacity style={styles.menuButton}>
+                                <Ionicons name="chevron-up" size={24} color="#aaa" />
+                            </TouchableOpacity>
                         </View>
-
-                        <TouchableOpacity style={styles.menuButton}>
-                            <Ionicons name="chevron-up" size={24} color="#aaa" />
-                        </TouchableOpacity>
                     </View>
-                </View>
+                </>
             ) : null}
         </View>
     );
@@ -598,5 +750,128 @@ const styles = StyleSheet.create({
         borderRadius: 15,
         borderWidth: 1,
         borderColor: '#FF3B30'
+    },
+
+    // Facepile
+    facepileContainer: {
+        zIndex: 100, // Float above everything
+        position: 'absolute',
+        bottom: 200,
+        left: 20,
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: 'rgba(30,30,30,0.8)',
+        alignSelf: 'flex-start',
+        padding: 8,
+        paddingHorizontal: 12,
+        borderRadius: 25,
+        elevation: 5,
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.3,
+        shadowRadius: 3,
+    },
+    facepileAvatar: {
+        width: 32,
+        height: 32,
+        borderRadius: 16,
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderWidth: 1.5,
+        borderColor: '#1E1E1E',
+    },
+    facepileInitial: {
+        color: '#fff',
+        fontSize: 12,
+        fontWeight: 'bold',
+    },
+    facepileMoreBadge: {
+        backgroundColor: '#444',
+    },
+    facepileMoreText: {
+        color: '#fff',
+        fontSize: 10,
+        fontWeight: 'bold',
+    },
+    facepileLabel: {
+        color: '#bbb',
+        marginLeft: 10,
+        fontWeight: '500',
+        fontSize: 14
+    },
+
+    // Modal
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'flex-end',
+    },
+    modalContent: {
+        backgroundColor: '#1C1C1E',
+        borderTopLeftRadius: 24,
+        borderTopRightRadius: 24,
+        height: '60%',
+        padding: 20,
+    },
+    modalHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 20,
+        borderBottomWidth: 1,
+        borderBottomColor: '#333',
+        paddingBottom: 15,
+    },
+    modalTitle: {
+        color: '#fff',
+        fontSize: 20,
+        fontWeight: 'bold',
+    },
+    closeButton: {
+        padding: 5,
+    },
+    modalList: {
+        flex: 1,
+    },
+    emptyText: {
+        color: '#777',
+        textAlign: 'center',
+        marginTop: 20,
+        fontSize: 16,
+    },
+    modalRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingVertical: 12,
+        borderBottomWidth: 1,
+        borderBottomColor: '#2C2C2E',
+    },
+    modalAvatar: {
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    modalAvatarText: {
+        color: '#fff',
+        fontSize: 18,
+        fontWeight: 'bold',
+    },
+    modalUsername: {
+        color: '#fff',
+        fontSize: 16,
+        fontWeight: '600',
+    },
+    modalStatus: {
+        color: '#4CD964',
+        fontSize: 12,
+        marginTop: 2,
+    },
+    modalEta: {
+        color: '#fff',
+        fontSize: 16,
+        fontWeight: 'bold',
     }
 });

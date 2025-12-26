@@ -59,15 +59,18 @@ async def websocket_endpoint(
             
             lat = data.get("lat")
             lon = data.get("lon")
-            
+            eta = data.get("eta")
+
             if lat is None or lon is None:
                 continue
 
             await manager.update_location_and_broadcast(
                 convoy_id=convoy_id,
                 user_id=user_id,
+                username=user.username,
                 lat=lat,
-                lon=lon
+                lon=lon,
+                eta=eta
             )
             
     except WebSocketDisconnect:
