@@ -7,4 +7,4 @@
 [x] Change the X button meaning in the UI, now clicking on it open the burger menu, make it create a new single convoy.
 [] Share music between drivers.
 [] Quick chat between convoy.
-[] 
+[] Mine icon needs to be arrow like waze and other members could chose there own icon so others will see them.
