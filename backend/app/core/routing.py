@@ -31,10 +31,10 @@ async def get_driving_distance(lat1: float, lon1: float, lat2: float, lon2: floa
         # but spec says return 0.0 or fallback.
         return 0.0
 
-async def get_route_geometry(lat1: float, lon1: float, lat2: float, lon2: float) -> list[dict]:
+async def get_route_geometry(lat1: float, lon1: float, lat2: float, lon2: float) -> tuple[list[dict], float, float]:
     """
     Fetch route geometry (polyline) between two points using OSRM.
-    Returns a list of dicts: [{'latitude': lat, 'longitude': lon}, ...]
+    Returns a tuple: (path, duration_seconds, distance_meters)
     """
     # OSRM url for full geometry
     url = f"http://router.project-osrm.org/route/v1/driving/{lon1},{lat1};{lon2},{lat2}?overview=full&geometries=geojson"
@@ -46,16 +46,19 @@ async def get_route_geometry(lat1: float, lon1: float, lat2: float, lon2: float)
             data = response.json()
 
             if data.get("code") == "Ok" and data.get("routes"):
+                route = data["routes"][0]
                 # Extract coordinates. OSRM GeoJSON format is [lon, lat]
-                coordinates = data["routes"][0]["geometry"]["coordinates"]
+                coordinates = route["geometry"]["coordinates"]
+                duration = float(route["duration"])
+                distance = float(route["distance"])
                 
                 # Convert to [{'latitude': lat, 'longitude': lon}, ...]
                 path = [{"latitude": c[1], "longitude": c[0]} for c in coordinates]
-                return path
+                return path, duration, distance
             else:
                 logger.warning(f"OSRM returned no routes for geometry: {data}")
-                return []
+                return [], 0.0, 0.0
                 
     except Exception as e:
         logger.error(f"Error fetching OSRM route geometry: {e}")
-        return []
+        return [], 0.0, 0.0

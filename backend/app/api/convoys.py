@@ -169,12 +169,12 @@ async def get_convoy_route(
         # If no destination set, return empty route
         return {"route": []}
 
-    path = await get_route_geometry(
+    path, duration, distance = await get_route_geometry(
         user_lat, user_lon, 
         convoy.destination_lat, convoy.destination_lon
     )
     
-    return {"route": path}
+    return {"route": path, "duration": duration, "distance": distance}
 
 @router.delete("/{convoy_id}")
 async def leave_convoy(
