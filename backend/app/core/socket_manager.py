@@ -50,7 +50,7 @@ class ConnectionManager:
             
         self.convoy_state[convoy_id][user_id].update(update_data)
 
-        # 2. Calculate Distance (Logic kept same as fix)
+        # 2. Calculate Distance
         dest = self.convoy_destinations.get(convoy_id)
         if dest:
             distance = await get_driving_distance(lat, lon, dest["lat"], dest["lon"])
