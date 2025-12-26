@@ -282,31 +282,17 @@ export default function MapScreen() {
         const user = await getUserProfile();
 
         const isGuest = user?.is_guest;
+        const displayText = isGuest ? 'Guest' : (user?.username || 'Unknown User');
 
         const options = [];
 
-        if (isGuest) {
-            options.push({
-                text: "Sign Up / Save Account",
-                onPress: () => Alert.alert("Sign Up", "Navigate to Signup Screen")
-            });
-        } else {
-            options.push({
-                text: "Logout",
-                style: 'destructive',
-                onPress: async () => {
-                    await SecureStore.deleteItemAsync('user_token');
-                    navigation.replace('Login' as never);
-                }
-            });
-        }
-
+        // Only show Dashboard and Cancel for now
         options.push({ text: "Dashboard / Join", onPress: () => navigation.navigate("Dashboard" as never) });
         options.push({ text: "Cancel", style: "cancel" });
 
         Alert.alert(
             "Menu",
-            `Logged in as: ${user?.username || 'Guest'}`,
+            `Logged in as: ${displayText}`,
             options as any
         );
     };
