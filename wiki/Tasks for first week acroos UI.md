@@ -6,3 +6,5 @@
 [x] Add signup option dashboard.
 [x] Change the X button meaning in the UI, now clicking on it open the burger menu, make it create a new single convoy.
 [] Share music between drivers.
+[] Quick chat between convoy.
+[] 
