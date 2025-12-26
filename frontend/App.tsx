@@ -17,10 +17,10 @@ export default function App() {
     prefixes: [prefix, 'weride://'],
     config: {
       screens: {
-        Dashboard: 'convoy/join',
+        Map: 'convoy/join',
         Login: 'login',
         Signup: 'signup',
-        Map: 'map',
+        Dashboard: 'dashboard',
       },
     },
   };
