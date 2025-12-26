@@ -4,7 +4,8 @@ import * as SecureStore from 'expo-secure-store';
 import { useNavigation, useFocusEffect, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { API_URL } from '../config';
-import { getUserProfile, UserProfile } from '../api';
+import { getUserProfile, UserProfile, leaveConvoy } from '../api';
+import { Ionicons } from '@expo/vector-icons';
 
 interface Convoy {
     id: string;
@@ -207,6 +208,30 @@ export default function DashboardScreen() {
         });
     };
 
+    const handleLeaveConvoy = (convoyId: string) => {
+        Alert.alert(
+            "Delete Convoy?",
+            "Are you sure you want to leave this convoy? This cannot be undone.",
+            [
+                { text: "Cancel", style: "cancel" },
+                {
+                    text: "Delete",
+                    style: "destructive",
+                    onPress: async () => {
+                        try {
+                            // Optimistic Update
+                            setConvoys(prev => prev.filter(c => c.id !== convoyId));
+                            await leaveConvoy(convoyId);
+                        } catch (error) {
+                            Alert.alert("Error", "Failed to leave convoy");
+                            fetchConvoysAndProfile(); // Revert on error
+                        }
+                    }
+                }
+            ]
+        );
+    };
+
     const renderItem = ({ item }: { item: Convoy }) => (
         <View style={styles.item}>
             <TouchableOpacity onPress={() => navigation.navigate('Map', { convoyId: item.id })}>
@@ -218,9 +243,16 @@ export default function DashboardScreen() {
                 <TouchableOpacity style={styles.actionButton} onPress={() => handleShare(item)}>
                     <Text style={styles.actionButtonText}>Share Invite</Text>
                 </TouchableOpacity>
+                <TouchableOpacity style={styles.deleteButton} onPress={() => handleLeaveConvoy(item.id)}>
+                    <Ionicons name="trash-outline" size={20} color="#FF3B30" />
+                </TouchableOpacity>
             </View>
         </View>
     );
+
+    const filteredConvoys = convoys
+        .filter(c => c.name !== 'Solo Drive')
+        .sort((a, b) => b.id.localeCompare(a.id));
 
     return (
         <View style={styles.container}>
@@ -246,8 +278,8 @@ export default function DashboardScreen() {
                             </TouchableOpacity>
                         </View>
                     ) : (
-                        <TouchableOpacity onPress={handleLogout} style={{ marginTop: 5 }}>
-                            <Text style={{ color: '#FF3B30', fontWeight: '600' }}>Logout</Text>
+                        <TouchableOpacity onPress={handleLogout} style={styles.logoutButton}>
+                            <Text style={styles.logoutButtonText}>Logout</Text>
                         </TouchableOpacity>
                     )}
                     <Text style={[styles.headerTitle, { marginTop: 10 }]}>My Convoys</Text>
@@ -255,7 +287,7 @@ export default function DashboardScreen() {
             </View>
 
             <FlatList
-                data={convoys}
+                data={filteredConvoys}
                 renderItem={renderItem}
                 keyExtractor={item => item.id}
                 contentContainerStyle={styles.list}
@@ -428,9 +460,32 @@ const styles = StyleSheet.create({
         flex: 1,
         alignItems: 'center',
         padding: 5,
+        borderRightWidth: 1,
+        borderRightColor: '#eee'
+    },
+    deleteButton: {
+        padding: 5,
+        paddingHorizontal: 15,
+        justifyContent: 'center',
+        alignItems: 'center',
     },
     actionButtonText: {
         color: '#007AFF',
         fontWeight: '500',
+    },
+    logoutButton: {
+        marginTop: 5,
+        backgroundColor: '#ffe5e5',
+        paddingVertical: 6,
+        paddingHorizontal: 12,
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: '#ffcccb',
+        alignSelf: 'flex-start'
+    },
+    logoutButtonText: {
+        color: '#FF3B30',
+        fontWeight: '600',
+        fontSize: 14
     }
 });

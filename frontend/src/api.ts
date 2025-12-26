@@ -147,4 +147,15 @@ export const loginUser = async (username: string, password: string) => {
     }
 };
 
+
+export const leaveConvoy = async (convoyId: string) => {
+    try {
+        const response = await api.delete(`/convoys/${convoyId}`);
+        return response.data;
+    } catch (error: any) {
+        console.error("Error leaving convoy:", error);
+        throw error;
+    }
+};
+
 export default api;
