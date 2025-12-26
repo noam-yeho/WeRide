@@ -4,10 +4,10 @@ import MapView, { Marker, Polyline, PROVIDER_DEFAULT } from 'react-native-maps';
 import * as Location from 'expo-location';
 import * as SecureStore from 'expo-secure-store';
 import { useRoute, RouteProp, useNavigation } from '@react-navigation/native';
-import { Ionicons } from '@expo/vector-icons'; // Used for icons
+import { Ionicons } from '@expo/vector-icons';
 import { API_URL, WS_URL } from '../config';
-
-
+import { loginAsGuest } from '../api';
+// import { Menu, Car, Navigation } from 'lucide-react-native'; // Removed: causing issues with Expo, sticking to Ionicons for now
 
 const DARK_MAP_STYLE = [
     { "elementType": "geometry", "stylers": [{ "color": "#242f3e" }] },
@@ -31,7 +31,7 @@ const DARK_MAP_STYLE = [
 ];
 
 type RootStackParamList = {
-    Map: { convoyId: string };
+    Map: { convoyId?: string }; // Copilot: Made convoyId optional
 };
 
 type MapScreenRouteProp = RouteProp<RootStackParamList, 'Map'>;
@@ -39,7 +39,7 @@ type MapScreenRouteProp = RouteProp<RootStackParamList, 'Map'>;
 export default function MapScreen() {
     const route = useRoute<MapScreenRouteProp>();
     const navigation = useNavigation();
-    const { convoyId } = route.params;
+    const convoyId = route.params?.convoyId; // Optional
 
     const mapRef = useRef<MapView>(null);
     const ws = useRef<WebSocket | null>(null);
@@ -49,14 +49,37 @@ export default function MapScreen() {
     const [routeCoordinates, setRouteCoordinates] = useState<any[]>([]);
     const [convoy, setConvoy] = useState<any>(null);
     const [hasFetchedRoute, setHasFetchedRoute] = useState(false);
+    const [isAuthenticated, setIsAuthenticated] = useState(false);
 
     // Derived stats
     const [distanceKm, setDistanceKm] = useState<string>('0');
     const [etaMin, setEtaMin] = useState<string>('0');
     const [arrivalTime, setArrivalTime] = useState<string>('--:--');
 
-    // 1. Fetch Convoy Details (Destination Name)
+    // 0. Silent Login Check
     useEffect(() => {
+        const checkAuth = async () => {
+            let token = await SecureStore.getItemAsync('user_token');
+            if (!token) {
+                console.log("⚠️ No token found. Initiating silent login...");
+                token = await loginAsGuest();
+            } else {
+                console.log("✅ Token found.");
+            }
+
+            if (token) {
+                setIsAuthenticated(true);
+            } else {
+                Alert.alert("Authentication Failed", "Could not sign you in.");
+            }
+        };
+        checkAuth();
+    }, []);
+
+    // 1. Fetch Convoy Details (Only if convoyId exists)
+    useEffect(() => {
+        if (!convoyId || !isAuthenticated) return;
+
         const fetchConvoyDetails = async () => {
             try {
                 const token = await SecureStore.getItemAsync('user_token');
@@ -75,7 +98,7 @@ export default function MapScreen() {
             }
         };
         fetchConvoyDetails();
-    }, [convoyId]);
+    }, [convoyId, isAuthenticated]);
 
     // 2. Setup Permissions, Location Watching & WebSocket
     useEffect(() => {
@@ -84,26 +107,27 @@ export default function MapScreen() {
         const setup = async () => {
             const { status } = await Location.requestForegroundPermissionsAsync();
             if (status !== 'granted') {
-                Alert.alert("Permission denied", "We need location access to connect you to the convoy.");
-                navigation.goBack();
+                Alert.alert("Permission denied", "We need location access to show the map.");
                 return;
             }
 
-            const token = await SecureStore.getItemAsync('user_token');
-            if (!token) return;
-
-            // WebSocket Connection
-            const socketUrl = `${WS_URL}/${convoyId}?token=${token}`;
-            ws.current = new WebSocket(socketUrl);
-            ws.current.onopen = () => console.log("✅ Connected to Convoy!");
-            ws.current.onmessage = (e) => {
-                const data = JSON.parse(e.data);
-                if (data.type === 'convoy_update') {
-                    setOtherMembers(data.members || []);
+            // WebSocket Connection (Only if convoyId exists)
+            if (convoyId && isAuthenticated) {
+                const token = await SecureStore.getItemAsync('user_token');
+                if (token) {
+                    const socketUrl = `${WS_URL}/${convoyId}?token=${token}`;
+                    ws.current = new WebSocket(socketUrl);
+                    ws.current.onopen = () => console.log("✅ Connected to Convoy!");
+                    ws.current.onmessage = (e) => {
+                        const data = JSON.parse(e.data);
+                        if (data.type === 'convoy_update') {
+                            setOtherMembers(data.members || []);
+                        }
+                    };
+                    ws.current.onerror = (e) => console.log("❌ WS Error:", e);
+                    ws.current.onclose = () => console.log("🔌 Disconnected from Convoy");
                 }
-            };
-            ws.current.onerror = (e) => console.log("❌ WS Error:", e);
-            ws.current.onclose = () => console.log("🔌 Disconnected from Convoy");
+            }
 
             // Location Watching
             locationSubscription = await Location.watchPositionAsync(
@@ -115,7 +139,7 @@ export default function MapScreen() {
                 (newLocation) => {
                     setLocation(newLocation);
 
-                    // Send update to WS
+                    // Send update to WS (Only if connected)
                     if (ws.current && ws.current.readyState === WebSocket.OPEN) {
                         const payload = {
                             lat: newLocation.coords.latitude,
@@ -127,15 +151,19 @@ export default function MapScreen() {
             );
         };
 
-        setup();
+        if (isAuthenticated || !convoyId) {
+            // Run setup if authenticated OR if we are in free drive mode (don't strictly need auth for local map, but good to have)
+            // Actually we do need location permission regardless of auth.
+            setup();
+        };
 
         return () => {
             if (ws.current) ws.current.close();
             if (locationSubscription) locationSubscription.remove();
         };
-    }, [convoyId]);
+    }, [convoyId, isAuthenticated]);
 
-    // 3. React to Location Updates: Animate Camera + Fetch Route ONCE
+    // 3. React to Location Updates: Animate Camera + Fetch Route (If convoy)
     useEffect(() => {
         if (!location) return;
 
@@ -146,12 +174,12 @@ export default function MapScreen() {
                 longitude: location.coords.longitude,
             },
             pitch: 45,
-            zoom: 17, // Closer zoom for navigation feel
+            zoom: 17,
             heading: location.coords.heading || 0,
         });
 
-        // Fetch Route immediately if not done yet
-        if (!hasFetchedRoute) {
+        // Fetch Route immediately if not done yet AND we have a convoy
+        if (convoyId && !hasFetchedRoute && isAuthenticated) {
             fetchRoute(location.coords);
             setHasFetchedRoute(true);
         }
@@ -161,7 +189,7 @@ export default function MapScreen() {
             calculateStats(location.coords);
         }
 
-    }, [location]);
+    }, [location, isAuthenticated]);
 
     const fetchRoute = async (coords: { latitude: number; longitude: number }) => {
         try {
@@ -233,13 +261,21 @@ export default function MapScreen() {
     }
 
     const handleLeave = () => {
-        Alert.alert("Exit Navigation", "Are you sure you want to leave the convoy?", [
-            { text: "Cancel", style: "cancel" },
-            { text: "Exit", style: 'destructive', onPress: () => navigation.goBack() }
-        ]);
+        if (convoyId) {
+            Alert.alert("Exit Convoy", "Are you sure you want to leave the convoy?", [
+                { text: "Cancel", style: "cancel" },
+                { text: "Exit", style: 'destructive', onPress: () => navigation.goBack() } // This might need logic to actually 'leave' API wise if needed
+            ]);
+        } else {
+            // In free drive, maybe just open menu?
+            Alert.alert("Menu", "Dashboard options", [
+                { text: "Login / Dashboard", onPress: () => navigation.navigate("Dashboard" as never) }, // Quick hack for navigation type
+                { text: "Cancel", style: "cancel" }
+            ]);
+        }
     };
 
-    if (!location && !convoy) {
+    if (!location) {
         return (
             <View style={styles.loadingContainer}>
                 <ActivityIndicator size="large" color="#4A89F3" />
@@ -301,7 +337,6 @@ export default function MapScreen() {
                         title={`Driver ${member.user_id}`}
                     >
                         <View style={styles.otherMarkerContainer}>
-                            {/* Car Icon */}
                             <Text style={{ fontSize: 20 }}>🚗</Text>
                         </View>
                     </Marker>
@@ -321,47 +356,51 @@ export default function MapScreen() {
                 )}
             </MapView>
 
-            {/* Top Info Bar (Next Turn Placeholder - Visual Only) */}
-            <View style={styles.topBar}>
-                <View style={styles.topBarContent}>
-                    <Ionicons name="arrow-up" size={32} color="#fff" />
-                    <View style={{ marginLeft: 15 }}>
-                        <Text style={styles.topBarDistance}>100 m</Text>
-                        <Text style={styles.topBarInstruction}>Head straight</Text>
+            {/* Top Info Bar (Only show if in Convoy Mode) */}
+            {convoyId && (
+                <View style={styles.topBar}>
+                    <View style={styles.topBarContent}>
+                        <Ionicons name="arrow-up" size={32} color="#fff" />
+                        <View style={{ marginLeft: 15 }}>
+                            <Text style={styles.topBarDistance}>100 m</Text>
+                            <Text style={styles.topBarInstruction}>Head straight</Text>
+                        </View>
                     </View>
                 </View>
-            </View>
+            )}
 
-            {/* Bottom Panel (Waze/Google Maps Syle) */}
-            <View style={styles.bottomSheet}>
-                <View style={styles.bottomParams}>
-                    {/* Left: Exit Button */}
-                    <TouchableOpacity style={styles.exitButton} onPress={handleLeave}>
-                        <Ionicons name="close" size={28} color="#fff" />
-                    </TouchableOpacity>
+            {/* Menu Button (Floating when NO bottom sheet) - or always visible? */}
+            {!convoyId && (
+                <TouchableOpacity style={styles.floatingMenuButton} onPress={handleLeave}>
+                    <Ionicons name="menu" size={32} color="#fff" />
+                </TouchableOpacity>
+            )}
 
-                    {/* Right: Stats */}
-                    <View style={styles.statsContainer}>
-                        {/* Destination Name */}
-                        <Text style={styles.destinationText} numberOfLines={1}>
-                            {convoy?.destination_name || "Unknown Destination"}
-                        </Text>
 
-                        {/* Top Line: ETA */}
-                        <Text style={styles.etaText}>{etaMin} min</Text>
+            {/* Bottom Panel (Only show if in Convoy Mode) */}
+            {convoyId && (
+                <View style={styles.bottomSheet}>
+                    <View style={styles.bottomParams}>
+                        <TouchableOpacity style={styles.exitButton} onPress={handleLeave}>
+                            <Ionicons name="close" size={28} color="#fff" />
+                        </TouchableOpacity>
 
-                        {/* Bottom Line: Distance & Time */}
-                        <Text style={styles.detailText}>
-                            <Text style={styles.greenText}>{distanceKm} km</Text> • {arrivalTime}
-                        </Text>
+                        <View style={styles.statsContainer}>
+                            <Text style={styles.destinationText} numberOfLines={1}>
+                                {convoy?.destination_name || "Unknown Destination"}
+                            </Text>
+                            <Text style={styles.etaText}>{etaMin} min</Text>
+                            <Text style={styles.detailText}>
+                                <Text style={styles.greenText}>{distanceKm} km</Text> • {arrivalTime}
+                            </Text>
+                        </View>
+
+                        <TouchableOpacity style={styles.menuButton}>
+                            <Ionicons name="chevron-up" size={24} color="#aaa" />
+                        </TouchableOpacity>
                     </View>
-
-                    {/* Far Right: Menu/More (Visual Placeholder) */}
-                    <TouchableOpacity style={styles.menuButton}>
-                        <Ionicons name="chevron-up" size={24} color="#aaa" />
-                    </TouchableOpacity>
                 </View>
-            </View>
+            )}
         </View>
     );
 }
@@ -370,17 +409,15 @@ const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#000' },
     loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#242f3e' },
 
-    // Top Bar (Green/Dark Navigation Header)
+    // Top Bar
     topBar: {
         position: 'absolute',
         top: 60,
         left: 20,
         right: 20,
-        backgroundColor: '#1E1E1E', // Dark grey/green
+        backgroundColor: '#1E1E1E',
         borderRadius: 16,
         padding: 15,
-        flexDirection: 'row',
-        alignItems: 'center',
         shadowColor: "#000",
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.3,
@@ -390,6 +427,24 @@ const styles = StyleSheet.create({
     topBarContent: { flexDirection: 'row', alignItems: 'center' },
     topBarDistance: { color: '#fff', fontSize: 24, fontWeight: 'bold' },
     topBarInstruction: { color: '#aaa', fontSize: 16, marginTop: 2 },
+
+    // Floating Menu Button (Free Drive)
+    floatingMenuButton: {
+        position: 'absolute',
+        top: 60,
+        left: 20,
+        width: 50,
+        height: 50,
+        borderRadius: 25,
+        backgroundColor: '#1E1E1E',
+        alignItems: 'center',
+        justifyContent: 'center',
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 5,
+        elevation: 10,
+    },
 
     // Bottom Sheet
     bottomSheet: {
@@ -417,7 +472,7 @@ const styles = StyleSheet.create({
         width: 50,
         height: 50,
         borderRadius: 25,
-        backgroundColor: '#FF3B30', // Red exit button
+        backgroundColor: '#FF3B30',
         alignItems: 'center',
         justifyContent: 'center',
         elevation: 5,
@@ -434,7 +489,7 @@ const styles = StyleSheet.create({
         marginBottom: 4,
     },
     etaText: {
-        color: '#4CD964', // Bright green for ETA
+        color: '#4CD964',
         fontSize: 26,
         fontWeight: 'bold',
     },
@@ -450,10 +505,7 @@ const styles = StyleSheet.create({
     menuButton: {
         padding: 10,
     },
-
-    // Markers
     navArrowContainer: {
-        // Simple container for the icon
     },
     otherMarkerContainer: {
         padding: 5,
