@@ -186,6 +186,8 @@
   },
   "active": "6d28b0fed5b6ca77",
   "lastOpenFiles": [
+    "frontend/node_modules/lucide-react-native/dist/icons.d.ts",
+    "frontend/node_modules/lucide-react-native/dist/lucide-react-native.d.ts",
     "frontend/node_modules/expo-linking/node_modules/expo-constants/android/src/main/java/expo/modules/constants/ConstantsService.kt",
     "frontend/node_modules/expo-linking/node_modules/expo-constants/android/src/main/java/expo/modules/constants/ConstantsModule.kt",
     "frontend/node_modules/expo-linking/node_modules/expo-constants/android/src/main/java/expo/modules/constants/ConstantsPackage.kt",
@@ -195,8 +197,6 @@
     "frontend/node_modules/expo-linking/android/src/main/java/expo/modules/linking/ExpoLinkingModule.kt",
     "frontend/node_modules/expo-linking/node_modules/expo-constants/android/src/main/java/expo/modules",
     "frontend/node_modules/expo-linking/local-maven-repo/host/exp/exponent/expo.modules.linking/8.0.11/expo.modules.linking-8.0.11.pom.sha512",
-    "frontend/node_modules/expo-linking/local-maven-repo/host/exp/exponent/expo.modules.linking/8.0.11/expo.modules.linking-8.0.11.module.md5",
-    "frontend/node_modules/expo-linking/local-maven-repo/host/exp/exponent/expo.modules.linking/8.0.11/expo.modules.linking-8.0.11.pom",
     "frontend/node_modules/expo-linking/node_modules/expo-constants/README.md",
     "frontend/node_modules/expo-linking/node_modules/expo-constants/CHANGELOG.md",
     "frontend/node_modules/expo-linking/README.md",
