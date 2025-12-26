@@ -103,7 +103,13 @@ export const createConvoy = async (name: string, destination: string, lat: numbe
     }
 };
 
-export const getUserProfile = async () => {
+export interface UserProfile {
+    id: string;
+    username: string;
+    is_guest: boolean;
+}
+
+export const getUserProfile = async (): Promise<UserProfile | null> => {
     try {
         const response = await api.get('/users/me');
         return response.data;
