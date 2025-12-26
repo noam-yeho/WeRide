@@ -1,7 +1,7 @@
-import React, { useState, useCallback } from 'react';
-import { View, Text, Button, FlatList, StyleSheet, TouchableOpacity, Alert, Modal, TextInput } from 'react-native';
+import React, { useState, useCallback, useEffect } from 'react';
+import { View, Text, Button, FlatList, StyleSheet, TouchableOpacity, Alert, Modal, TextInput, Share } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useNavigation, useFocusEffect, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { API_URL } from '../config';
 import { getUserProfile, UserProfile } from '../api';
@@ -11,10 +11,19 @@ interface Convoy {
     name: string;
     invite_code: string;
     status: string;
+    share_link?: string;
 }
 
+type DashboardStackParamList = {
+    Dashboard: { code?: string };
+    Map: { convoyId: string };
+    Login: undefined;
+    Signup: undefined;
+};
+
 export default function DashboardScreen() {
-    const navigation = useNavigation<NativeStackNavigationProp<any>>();
+    const navigation = useNavigation<NativeStackNavigationProp<DashboardStackParamList>>();
+    const route = useRoute<RouteProp<DashboardStackParamList, 'Dashboard'>>();
     const [convoys, setConvoys] = useState<Convoy[]>([]);
     const [user, setUser] = useState<UserProfile | null>(null); // Store full user object
 
@@ -70,6 +79,19 @@ export default function DashboardScreen() {
         }, [])
     );
 
+    // Handle Deep Link
+    useEffect(() => {
+        if (route.params?.code) {
+            console.log("Deep link code detected:", route.params.code);
+            setInviteCode(route.params.code);
+            // Delay slightly to ensure state update, or just call join directly
+            handleJoinConvoy(route.params.code);
+            // Clear params to prevent re-join on focus? (Optional, requires navigation.setParams)
+            navigation.setParams({ code: undefined });
+        }
+    }, [route.params?.code]);
+
+
     // Clear Header Buttons
     React.useLayoutEffect(() => {
         navigation.setOptions({
@@ -77,6 +99,29 @@ export default function DashboardScreen() {
         });
     }, [navigation]);
 
+
+    const handleShare = async (convoy: Convoy) => {
+        try {
+            // Fallback if backend doesn't return share_link yet
+            const link = convoy.share_link || `weride://convoy/join?code=${convoy.invite_code}`;
+            const result = await Share.share({
+                message: `Join my WeRide convoy! Tap here: ${link}`,
+                url: link, // iOS often uses this
+                title: 'Join WeRide Convoy'
+            });
+            if (result.action === Share.sharedAction) {
+                if (result.activityType) {
+                    // shared with activity type of result.activityType
+                } else {
+                    // shared
+                }
+            } else if (result.action === Share.dismissedAction) {
+                // dismissed
+            }
+        } catch (error: any) {
+            Alert.alert(error.message);
+        }
+    };
 
     const handleCreateConvoy = async () => {
         try {
@@ -110,14 +155,21 @@ export default function DashboardScreen() {
         }
     };
 
-    const handleJoinConvoy = async () => {
-        if (!inviteCode.trim()) {
-            Alert.alert("Error", "Please enter a valid invite code");
+    const handleJoinConvoy = async (codeOverride?: string) => {
+        const codeToUse = codeOverride || inviteCode;
+
+        if (!codeToUse?.trim()) {
+            if (!codeOverride) Alert.alert("Error", "Please enter a valid invite code");
             return;
         }
 
         try {
             const token = await SecureStore.getItemAsync('user_token');
+            if (!token) {
+                // If guest auto-login isn't set up to happen silently here, we might need to prompt login.
+                // For now assume guest token exists or endpoint handles it.
+            }
+
             const response = await fetch(`${API_URL}/convoys/join`, {
                 method: 'POST',
                 headers: {
@@ -125,7 +177,7 @@ export default function DashboardScreen() {
                     'Authorization': `Bearer ${token}`
                 },
                 body: JSON.stringify({
-                    invite_code: inviteCode.trim().toUpperCase() // Ensure upper case if generated that way
+                    invite_code: codeToUse.trim().toUpperCase() // Ensure upper case if generated that way
                 })
             });
 
@@ -135,6 +187,7 @@ export default function DashboardScreen() {
                 setInviteCode('');
                 // Navigate to Map with convoyId
                 navigation.navigate('Map', { convoyId: convoy.id });
+                Alert.alert("Joined!", `You have joined ${convoy.name}`);
             } else {
                 // If 404 or other error
                 const errorData = await response.json();
@@ -155,14 +208,18 @@ export default function DashboardScreen() {
     };
 
     const renderItem = ({ item }: { item: Convoy }) => (
-        <TouchableOpacity
-            style={styles.item}
-            onPress={() => navigation.navigate('Map', { convoyId: item.id })}
-        >
-            <Text style={styles.title}>{item.name}</Text>
-            <Text>Code: {item.invite_code}</Text>
-            <Text>Status: {item.status}</Text>
-        </TouchableOpacity>
+        <View style={styles.item}>
+            <TouchableOpacity onPress={() => navigation.navigate('Map', { convoyId: item.id })}>
+                <Text style={styles.title}>{item.name}</Text>
+                <Text>Code: {item.invite_code}</Text>
+                <Text>Status: {item.status}</Text>
+            </TouchableOpacity>
+            <View style={styles.buttonRow}>
+                <TouchableOpacity style={styles.actionButton} onPress={() => handleShare(item)}>
+                    <Text style={styles.actionButtonText}>Share Invite</Text>
+                </TouchableOpacity>
+            </View>
+        </View>
     );
 
     return (
@@ -234,7 +291,7 @@ export default function DashboardScreen() {
                         />
                         <View style={styles.modalButtons}>
                             <Button title="Cancel" color="red" onPress={() => setJoinModalVisible(false)} />
-                            <Button title="Join" onPress={handleJoinConvoy} />
+                            <Button title="Join" onPress={() => handleJoinConvoy()} />
                         </View>
                     </View>
                 </View>
@@ -359,5 +416,21 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
         width: '100%',
         gap: 10
+    },
+    buttonRow: {
+        flexDirection: 'row',
+        marginTop: 10,
+        borderTopWidth: 1,
+        borderTopColor: '#eee',
+        paddingTop: 10,
+    },
+    actionButton: {
+        flex: 1,
+        alignItems: 'center',
+        padding: 5,
+    },
+    actionButtonText: {
+        color: '#007AFF',
+        fontWeight: '500',
     }
 });

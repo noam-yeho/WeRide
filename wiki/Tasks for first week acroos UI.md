@@ -4,3 +4,4 @@
 [x] Set the option to link the inventation to the convoy via WhatsApp or any other communicate option even to copy the link.
 [x] Remove phone number in the user creation so we will not need to consider security and privity considerations at least in the MVP.
 []() Add signup option dashboard.
+[] Change the X button meaning in the UI, now clicking on it open the burger menu, make it create a new single convoy.
