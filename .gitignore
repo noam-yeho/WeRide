@@ -8,6 +8,12 @@ env/
 venv/
 .env
 
+# Obsidian
+.obsidian/workspace
+.obsidian/workspace-mobile.json
+.obsidian/graph.json
+.obsidian/cache
+
 # Docker & Database Data (Never upload the actual DB files!)
 postgres_data/
 redis_data/
