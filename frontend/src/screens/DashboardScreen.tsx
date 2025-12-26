@@ -4,6 +4,7 @@ import * as SecureStore from 'expo-secure-store';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { API_URL } from '../config';
+import { getUserProfile } from '../api';
 
 interface Convoy {
     id: string;
@@ -15,12 +16,13 @@ interface Convoy {
 export default function DashboardScreen() {
     const navigation = useNavigation<NativeStackNavigationProp<any>>();
     const [convoys, setConvoys] = useState<Convoy[]>([]);
+    const [isGuest, setIsGuest] = useState(true); // Default to guest until fetched
 
     // Join Modal State
     const [joinModalVisible, setJoinModalVisible] = useState(false);
     const [inviteCode, setInviteCode] = useState('');
 
-    const fetchConvoys = async () => {
+    const fetchConvoysAndProfile = async () => {
         try {
             const token = await SecureStore.getItemAsync('user_token');
             if (!token) {
@@ -28,6 +30,11 @@ export default function DashboardScreen() {
                 return;
             }
 
+            // 1. Fetch Profile
+            const user = await getUserProfile();
+            setIsGuest(user?.is_guest ?? true);
+
+            // 2. Fetch Convoys
             const response = await fetch(`${API_URL}/convoys/mine`, {
                 headers: {
                     'Authorization': `Bearer ${token}`
@@ -41,15 +48,35 @@ export default function DashboardScreen() {
                 console.error('Failed to fetch convoys');
             }
         } catch (error) {
-            console.error('Error fetching convoys:', error);
+            console.error('Error fetching data:', error);
         }
     };
 
+    const LinkButton = ({ title, onPress }: { title: string, onPress: () => void }) => (
+        <TouchableOpacity onPress={onPress}>
+            <Text style={{ color: '#007AFF', fontSize: 16 }}>{title}</Text>
+        </TouchableOpacity>
+    );
+
     useFocusEffect(
         useCallback(() => {
-            fetchConvoys();
+            fetchConvoysAndProfile();
         }, [])
     );
+
+    // Update Header Button based on isGuest
+    React.useLayoutEffect(() => {
+        navigation.setOptions({
+            headerRight: () => (
+                isGuest ? (
+                    <Button title="Sign In" onPress={() => navigation.navigate('Login')} />
+                ) : (
+                    <Button title="Logout" onPress={handleLogout} />
+                )
+            ),
+        });
+    }, [navigation, isGuest]);
+
 
     const handleCreateConvoy = async () => {
         try {
@@ -70,7 +97,7 @@ export default function DashboardScreen() {
             });
 
             if (response.ok) {
-                fetchConvoys();
+                fetchConvoysAndProfile(); // Refresh
                 Alert.alert("Success", "Convoy created!");
             } else {
                 const errorData = await response.json();
@@ -142,7 +169,7 @@ export default function DashboardScreen() {
         <View style={styles.container}>
             <View style={styles.header}>
                 <Text style={styles.headerTitle}>My Convoys</Text>
-                <Button title="Logout" onPress={handleLogout} />
+                {/* Header Right Button is handled via API now */}
             </View>
 
             <FlatList

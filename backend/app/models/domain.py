@@ -48,6 +48,7 @@ class UserCreate(UserBase):
 class UserRead(UserBase):
     id: int
     created_at: datetime
+    is_guest: bool
 
 class ConvoyCreate(SQLModel):
     name: str
