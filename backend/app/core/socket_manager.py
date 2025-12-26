@@ -30,21 +30,24 @@ class ConnectionManager:
             if not self.active_connections[convoy_id]:
                 print(f"🧹 Convoy {convoy_id} is empty. Cleaning up.")
                 del self.active_connections[convoy_id]
-                if convoy_id in self.convoy_destinations: del self.convoy_destinations[convoy_id]
-                if convoy_id in self.convoy_state: del self.convoy_state[convoy_id]
+                if convoy_id in self.convoy_destinations:
+                    del self.convoy_destinations[convoy_id]
+                if convoy_id in self.convoy_state:
+                    del self.convoy_state[convoy_id]
             else:
                  print(f"⚠️ Client disconnected. Remaining clients: {len(self.active_connections[convoy_id])}")
 
     async def update_location_and_broadcast(self, convoy_id: str, user_id: str, username: str, lat: float, lon: float, eta: float = None):
-        # LOGGING INPUT
-        # print(f"📍 Update received: User={username}, ETA={eta}") 
-
         # 1. Update User Location
-        if convoy_id not in self.convoy_state: self.convoy_state[convoy_id] = {}
-        if user_id not in self.convoy_state[convoy_id]: self.convoy_state[convoy_id][user_id] = {}
+        if convoy_id not in self.convoy_state:
+            self.convoy_state[convoy_id] = {}
+        if user_id not in self.convoy_state[convoy_id]:
+            self.convoy_state[convoy_id][user_id] = {}
 
         update_data = {"username": username, "lat": lat, "lon": lon}
-        if eta is not None: update_data["eta"] = eta
+        if eta is not None:
+            update_data["eta"] = eta
+            
         self.convoy_state[convoy_id][user_id].update(update_data)
 
         # 2. Calculate Distance (Logic kept same as fix)
@@ -55,7 +58,11 @@ class ConnectionManager:
                 self.convoy_state[convoy_id][user_id]["distance"] = distance
 
         # 3. Rank members
-        members_with_distance = [(uid, data) for uid, data in self.convoy_state[convoy_id].items()]
+        members_with_distance = [
+            (uid, data) 
+            for uid, data in self.convoy_state[convoy_id].items()
+        ]
+        
         # Sort safe
         members_with_distance.sort(key=lambda x: x[1].get("distance", float('inf')))
 
@@ -74,12 +81,21 @@ class ConnectionManager:
 
         # LOGGING OUTPUT
         print(f"📢 Broadcasting to Convoy {convoy_id} | Active Members: {len(ranked_members)} | Clients: {len(self.active_connections.get(convoy_id, []))}")
-        # print(f"   -> Data: {ranked_members}") 
 
         if not dest:
-             message = {"type": "location_update", "user_id": user_id, "username": username, "lat": lat, "lon": lon, "eta": eta}
+             message = {
+                "type": "location_update",
+                "user_id": user_id,
+                "username": username,
+                "lat": lat,
+                "lon": lon,
+                "eta": eta
+            }
         else:
-            message = {"type": "convoy_update", "members": ranked_members}
+            message = {
+                "type": "convoy_update",
+                "members": ranked_members
+            }
 
         # 4. Broadcast
         if convoy_id in self.active_connections:
