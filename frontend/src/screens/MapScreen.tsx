@@ -44,6 +44,7 @@ export default function MapScreen() {
     const ws = useRef<WebSocket | null>(null);
     const locationSubscription = useRef<Location.LocationSubscription | null>(null);
     const etaRef = useRef<string>("0");
+    const lastLocationRef = useRef<Location.LocationObject | null>(null);
 
     const [location, setLocation] = useState<Location.LocationObject | null>(null);
     const [otherMembers, setOtherMembers] = useState<any[]>([]);
@@ -151,9 +152,51 @@ export default function MapScreen() {
                     };
                 }
             }
+
             locationSubscription.current = await Location.watchPositionAsync(
-                { accuracy: Location.Accuracy.High, timeInterval: 1000, distanceInterval: 0 },
-                (newLocation) => setLocation(newLocation)
+                {
+                    accuracy: Location.Accuracy.High,
+                    timeInterval: 1000,
+                    distanceInterval: 10 // changed from 0 to 10m to reduce noise
+                },
+                (newLocation) => {
+                    // 1. Accuracy Filtering
+                    if (newLocation.coords.accuracy && newLocation.coords.accuracy > 25) {
+                        return;
+                    }
+
+                    // 2. Movement Threshold
+                    // If we have a valid previous location, check if we moved enough
+                    if (lastLocationRef.current) {
+                        const dist = getDistanceFromLatLonInKm(
+                            lastLocationRef.current.coords.latitude,
+                            lastLocationRef.current.coords.longitude,
+                            newLocation.coords.latitude,
+                            newLocation.coords.longitude
+                        ) * 1000;
+                        if (dist < 5) return; // Ignore movements < 5 meters
+                    }
+
+                    // 3. Heading Stabilization
+                    // Only update heading if speed > 1 m/s (~3.6 km/h) to prevent spinning when stopped
+                    let finalHeading = newLocation.coords.heading;
+                    if (newLocation.coords.speed !== null && newLocation.coords.speed < 1) {
+                        if (lastLocationRef.current) {
+                            finalHeading = lastLocationRef.current.coords.heading;
+                        }
+                    }
+
+                    const stabilizedLocation = {
+                        ...newLocation,
+                        coords: {
+                            ...newLocation.coords,
+                            heading: finalHeading
+                        }
+                    };
+
+                    lastLocationRef.current = stabilizedLocation;
+                    setLocation(stabilizedLocation);
+                }
             );
         };
         if (isAuthenticated) setup();
