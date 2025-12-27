@@ -31,13 +31,13 @@ async def get_driving_distance(lat1: float, lon1: float, lat2: float, lon2: floa
         # but spec says return 0.0 or fallback.
         return 0.0
 
-async def get_route_geometry(lat1: float, lon1: float, lat2: float, lon2: float) -> tuple[list[dict], float, float]:
+async def get_route_geometry(lat1: float, lon1: float, lat2: float, lon2: float) -> dict:
     """
-    Fetch route geometry (polyline) between two points using OSRM.
-    Returns a tuple: (path, duration_seconds, distance_meters)
+    Fetch comprehensive route data between two points using OSRM.
+    Returns a dict with: geometry (path), duration, distance, and steps (maneuvers).
     """
-    # OSRM url for full geometry
-    url = f"http://router.project-osrm.org/route/v1/driving/{lon1},{lat1};{lon2},{lat2}?overview=full&geometries=geojson"
+    # OSRM url with steps=true for turn-by-turn guidance
+    url = f"http://router.project-osrm.org/route/v1/driving/{lon1},{lat1};{lon2},{lat2}?overview=full&geometries=geojson&steps=true"
     
     try:
         async with httpx.AsyncClient() as client:
@@ -54,11 +54,36 @@ async def get_route_geometry(lat1: float, lon1: float, lat2: float, lon2: float)
                 
                 # Convert to [{'latitude': lat, 'longitude': lon}, ...]
                 path = [{"latitude": c[1], "longitude": c[0]} for c in coordinates]
-                return path, duration, distance
+
+                # Extract steps from legs
+                extracted_steps = []
+                for leg in route.get("legs", []):
+                    for step in leg.get("steps", []):
+                        maneuver = step.get("maneuver", {})
+                        extracted_steps.append({
+                            "instruction": maneuver.get("instruction", ""),
+                            "type": maneuver.get("type", ""),
+                            "modifier": maneuver.get("modifier", ""),
+                            "distance": float(step.get("distance", 0)),
+                            "duration": float(step.get("duration", 0)),
+                            "name": step.get("name", ""),
+                            "location": {
+                                "latitude": maneuver.get("location", [0,0])[1],
+                                "longitude": maneuver.get("location", [0,0])[0]
+                            }
+                        })
+                
+                return {
+                    "route": path,
+                    "duration": duration,
+                    "distance": distance,
+                    "steps": extracted_steps,
+                    "status": "NORMAL"  # Default status for traffic support
+                }
             else:
                 logger.warning(f"OSRM returned no routes for geometry: {data}")
-                return [], 0.0, 0.0
+                return {"route": [], "duration": 0.0, "distance": 0.0, "steps": []}
                 
     except Exception as e:
         logger.error(f"Error fetching OSRM route geometry: {e}")
-        return [], 0.0, 0.0
+        return {"route": [], "duration": 0.0, "distance": 0.0, "steps": []}
