@@ -186,10 +186,8 @@
   },
   "active": "6d28b0fed5b6ca77",
   "lastOpenFiles": [
-    "full_code.txt",
     "frontend/src/components/SmoothCarMarker.tsx",
     "frontend/src/components",
-    "test.txt",
     "frontend/node_modules/lucide-react-native/dist/icons.d.ts",
     "frontend/node_modules/lucide-react-native/dist/lucide-react-native.d.ts",
     "frontend/node_modules/expo-linking/node_modules/expo-constants/android/src/main/java/expo/modules/constants/ConstantsService.kt",
