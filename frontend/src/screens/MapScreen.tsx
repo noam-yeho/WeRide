@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, Alert, TouchableOpacity, StatusBar, ScrollView, Modal } from 'react-native';
-import MapView, { Polyline, PROVIDER_DEFAULT } from 'react-native-maps';
+import MapView, { Polyline, PROVIDER_DEFAULT, Marker } from 'react-native-maps';
 import * as Location from 'expo-location';
 import * as SecureStore from 'expo-secure-store';
 import { useRoute, RouteProp, useNavigation } from '@react-navigation/native';
@@ -60,6 +60,11 @@ export default function MapScreen() {
     const [etaMin, setEtaMin] = useState<string>('0');
     const [arrivalTime, setArrivalTime] = useState<string>('--:--');
     const [membersModalVisible, setMembersModalVisible] = useState(false);
+
+    // Navigation Data State
+    const [navigationSteps, setNavigationSteps] = useState<any[]>([]);
+    const [currentStepIndex, setCurrentStepIndex] = useState(0);
+    const [distanceToNextStep, setDistanceToNextStep] = useState<number>(0);
 
     useEffect(() => {
         const checkAuthAndSetup = async () => {
@@ -174,6 +179,7 @@ export default function MapScreen() {
             mapRef.current?.animateCamera({
                 center: { latitude: location.coords.latitude, longitude: location.coords.longitude },
                 heading: location.coords.heading || 0,
+                pitch: routeCoordinates.length > 0 ? 60 : 0, // 3D Pitch when navigating
             }, { duration: 1000 });
         }
 
@@ -208,6 +214,9 @@ export default function MapScreen() {
                 const data = await response.json();
                 if (data.route?.length > 0) {
                     setRouteCoordinates(data.route);
+                    setNavigationSteps(data.steps || []);
+                    setCurrentStepIndex(0);
+
                     if (data.duration) {
                         const minutes = Math.ceil(data.duration / 60);
                         setEtaMin(minutes.toString());
@@ -216,17 +225,33 @@ export default function MapScreen() {
                         const arrival = new Date(now.getTime() + minutes * 60000);
                         setArrivalTime(`${arrival.getHours().toString().padStart(2, '0')}:${arrival.getMinutes().toString().padStart(2, '0')}`);
                     }
-                    calculateStats(coords, data.route);
+                    calculateStats(coords, data.route, data.steps);
                 }
             }
         } catch (error) { console.log(error); }
     };
 
-    const calculateStats = (currentLoc: any, routeCoords = routeCoordinates) => {
+    const calculateStats = (currentLoc: any, routeCoords = routeCoordinates, steps = navigationSteps) => {
         if (!routeCoords || routeCoords.length === 0) return;
         const dest = routeCoords[routeCoords.length - 1];
         const distMeters = getDistanceFromLatLonInKm(currentLoc.latitude, currentLoc.longitude, dest.latitude, dest.longitude) * 1000;
         setDistanceKm((distMeters / 1000).toFixed(1));
+
+        // Update current step based on location
+        if (steps.length > 0 && currentStepIndex < steps.length) {
+            const nextStep = steps[currentStepIndex];
+            const distToNext = getDistanceFromLatLonInKm(
+                currentLoc.latitude, currentLoc.longitude,
+                nextStep.location.latitude, nextStep.location.longitude
+            ) * 1000;
+
+            setDistanceToNextStep(Math.round(distToNext));
+
+            // If we are close to the next step (e.g., < 30m), move to the next one
+            if (distToNext < 30 && currentStepIndex < steps.length - 1) {
+                setCurrentStepIndex(prev => prev + 1);
+            }
+        }
     };
 
     const calculateEtaForMember = (distMeters: number) => {
@@ -254,35 +279,6 @@ export default function MapScreen() {
         const colors = ['#FF3B30', '#FF9500', '#FFCC00', '#4CD964', '#5AC8FA', '#007AFF', '#5856D6', '#FF2D55'];
         let hash = 0; for (let i = 0; i < id.length; i++) hash = id.charCodeAt(i) + ((hash << 5) - hash);
         return colors[Math.abs(hash) % colors.length];
-    };
-
-    const RenderCollapsedMembers = () => {
-        const uniqueMembers = Array.from(new Map(otherMembers.map(m => [m.user_id, m])).values());
-        if (uniqueMembers.length === 0) return null;
-        const displayMembers = uniqueMembers.slice(0, 3);
-        const remainingCount = uniqueMembers.length - 3;
-
-        return (
-            <TouchableOpacity style={styles.facepileContainer} onPress={() => setMembersModalVisible(true)} activeOpacity={0.8}>
-                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                    {displayMembers.map((member, index) => {
-                        const color = getMemberColor(member.user_id || 'unknown');
-                        const initial = member.username ? member.username.charAt(0).toUpperCase() : '?';
-                        return (
-                            <View key={`facepile-${index}`} style={[styles.facepileAvatar, { backgroundColor: color, zIndex: 3 - index, marginLeft: index === 0 ? 0 : -10 }]}>
-                                <Text style={styles.facepileInitial}>{initial}</Text>
-                            </View>
-                        );
-                    })}
-                    {remainingCount > 0 && (
-                        <View style={[styles.facepileAvatar, styles.facepileMoreBadge, { marginLeft: -10, zIndex: 0 }]}>
-                            <Text style={styles.facepileMoreText}>+{remainingCount}</Text>
-                        </View>
-                    )}
-                </View>
-                <Text style={styles.facepileLabel}>Status</Text>
-            </TouchableOpacity>
-        );
     };
 
     const MembersListModal = () => {
@@ -367,30 +363,15 @@ export default function MapScreen() {
                 )}
 
                 {location && (
-                    <SmoothCarMarker
-                        coordinate={{ latitude: location.coords.latitude, longitude: location.coords.latitude }} // FIX: this looks like a typo in the user's provided code (longitude: from latitude), but I better assume the user knows what they pasted or it's a Copy Paste error on their end. Wait, I should double check: longitude: location.coords.latitude is definitely wrong.
-                        // Actually, looking at the previous file content (Step 63 output):
-                        // coordinate={{ latitude: location.coords.latitude, longitude: location.coords.longitude }}
-                        // The user's input block HAS: coordinate={{ latitude: location.coords.latitude, longitude: location.coords.longitude }} in one place,
-                        // and in the MapView children:
-                        // {location && ( <SmoothCarMarker coordinate={{ latitude: location.coords.latitude, longitude: location.coords.longitude }} ...
-                        // Ah, I see "longitude: location.coords.longitude" in the user block.
-                        // It looks correct in the provided input block.
+                    <Marker
+                        coordinate={{ latitude: location.coords.latitude, longitude: location.coords.longitude }}
+                        anchor={{ x: 0.5, y: 0.5 }}
                         rotation={location.coords.heading || 0}
-                        identifier={currentUserId || "Me"}
-                        isMe={true}
-                    />
+                        flat={true}
+                    >
+                        <Ionicons name="navigate" size={32} color="#2196F3" />
+                    </Marker>
                 )}
-
-                {otherMembers.map((member, index) => (
-                    <SmoothCarMarker
-                        key={`member-${index}`}
-                        coordinate={{ latitude: member.lat, longitude: member.lon }}
-                        rotation={0}
-                        identifier={member.user_id}
-                        isMe={false}
-                    />
-                ))}
 
                 {convoy && (
                     <SmoothCarMarker
@@ -412,9 +393,27 @@ export default function MapScreen() {
                 <Ionicons name="menu" size={32} color="#fff" />
             </TouchableOpacity>
 
+            {navigationSteps.length > 0 && currentStepIndex < navigationSteps.length && (
+                <View style={styles.topNavigationBanner}>
+                    <View style={styles.maneuverIconContainer}>
+                        <Ionicons
+                            name={getManeuverIcon(navigationSteps[currentStepIndex].modifier)}
+                            size={40}
+                            color="#fff"
+                        />
+                    </View>
+                    <View style={styles.maneuverTextContainer}>
+                        <Text style={styles.instructionText} numberOfLines={2}>
+                            {navigationSteps[currentStepIndex].instruction || navigationSteps[currentStepIndex].name || "Continue"}
+                        </Text>
+                        <Text style={styles.stepDistanceText}>{distanceToNextStep > 1000 ? `${(distanceToNextStep / 1000).toFixed(1)} km` : `${distanceToNextStep} m`}</Text>
+                    </View>
+                </View>
+            )}
+
             {convoy && convoy.destination_lat ? (
                 <>
-                    <RenderCollapsedMembers />
+                    {/* RenderCollapsedMembers REMOVED HERE */}
                     <MembersListModal />
                     <View style={styles.bottomSheet}>
                         <View style={styles.bottomParams}>
@@ -422,12 +421,14 @@ export default function MapScreen() {
                                 <Ionicons name="close" size={28} color="#fff" />
                             </TouchableOpacity>
                             <View style={styles.statsContainer}>
-                                <Text style={styles.destinationText} numberOfLines={1}>{convoy?.destination_name || "Unknown"}</Text>
-                                <Text style={styles.etaText}>{etaMin} min</Text>
-                                <Text style={styles.detailText}><Text style={styles.greenText}>{distanceKm} km</Text> • {arrivalTime}</Text>
+                                <View style={styles.timeStats}>
+                                    <Text style={styles.etaGreenText}>{etaMin} min</Text>
+                                    <Text style={styles.arrivalTimeText}>{arrivalTime}</Text>
+                                </View>
+                                <Text style={styles.distanceRemainingText}>{distanceKm} km</Text>
                             </View>
-                            <TouchableOpacity style={styles.menuButton} onPress={() => setMembersModalVisible(true)}>
-                                <Ionicons name="chevron-up" size={24} color="#aaa" />
+                            <TouchableOpacity style={styles.shareOptionButton} onPress={() => setMembersModalVisible(true)}>
+                                <Ionicons name="people" size={24} color="#fff" />
                             </TouchableOpacity>
                         </View>
                     </View>
@@ -456,12 +457,6 @@ const styles = StyleSheet.create({
     detailText: { color: '#aaa', fontSize: 16, marginTop: 4 },
     greenText: { color: '#fff', fontWeight: '500' },
     menuButton: { padding: 10 },
-    facepileContainer: { zIndex: 100, position: 'absolute', bottom: 200, left: 20, flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(30,30,30,0.8)', padding: 8, paddingHorizontal: 12, borderRadius: 25, elevation: 5 },
-    facepileAvatar: { width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center', borderWidth: 1.5, borderColor: '#1E1E1E' },
-    facepileInitial: { color: '#fff', fontSize: 12, fontWeight: 'bold' },
-    facepileMoreBadge: { backgroundColor: '#444' },
-    facepileMoreText: { color: '#fff', fontSize: 10, fontWeight: 'bold' },
-    facepileLabel: { color: '#bbb', marginLeft: 10, fontWeight: '500', fontSize: 14 },
     modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
     modalContent: { backgroundColor: '#1C1C1E', borderTopLeftRadius: 24, borderTopRightRadius: 24, height: '60%', padding: 20 },
     modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, borderBottomWidth: 1, borderBottomColor: '#333', paddingBottom: 15 },
@@ -474,5 +469,96 @@ const styles = StyleSheet.create({
     modalAvatarText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
     modalUsername: { color: '#fff', fontSize: 16, fontWeight: '600' },
     modalStatus: { color: '#4CD964', fontSize: 12, marginTop: 2 },
-    modalEta: { color: '#fff', fontSize: 16, fontWeight: 'bold' }
+    modalEta: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
+
+    // Production Navigation Styles
+    topNavigationBanner: {
+        position: 'absolute',
+        top: 50,
+        left: 20,
+        right: 20,
+        height: 100,
+        backgroundColor: '#1B5E20', // Production Green
+        borderRadius: 15,
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 15,
+        elevation: 10,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 5,
+        zIndex: 1000,
+    },
+    maneuverIconContainer: {
+        width: 60,
+        height: 60,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    maneuverTextContainer: {
+        flex: 1,
+        marginLeft: 15,
+    },
+    instructionText: {
+        color: '#fff',
+        fontSize: 18,
+        fontWeight: 'bold',
+    },
+    stepDistanceText: {
+        color: '#A5D6A7',
+        fontSize: 16,
+        marginTop: 4,
+    },
+    timeStats: {
+        flexDirection: 'row',
+        alignItems: 'baseline',
+    },
+    etaGreenText: {
+        color: '#4CD964',
+        fontSize: 24,
+        fontWeight: 'bold',
+    },
+    arrivalTimeText: {
+        color: '#aaa',
+        fontSize: 16,
+        marginLeft: 10,
+    },
+    distanceRemainingText: {
+        color: '#fff',
+        fontSize: 16,
+        marginTop: 2,
+    },
+    shareOptionButton: {
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        backgroundColor: '#333',
+        justifyContent: 'center',
+        alignItems: 'center',
+    }
 });
+
+// Helper for Maneuver Icons
+const getManeuverIcon = (modifier: string) => {
+    switch (modifier) {
+        case 'right':
+            return 'arrow-forward';
+        case 'left':
+            return 'arrow-back';
+        case 'slight right':
+            return 'trending-up';
+        case 'slight left':
+            return 'trending-up';
+        case 'sharp right':
+            return 'return-up-forward';
+        case 'sharp left':
+            return 'return-up-back';
+        case 'straight':
+            return 'arrow-up';
+        case 'uturn':
+            return 'refresh';
+        default:
+            return 'navigate';
+    }
+};
